@@ -48,12 +48,12 @@ export const PERSONALITIES: Record<string, Personality> = {
   },
   analytical: {
     label: "Analytical",
-    style: "Cites votes, timing, and who benefited.",
+    style: "Cites Castle chat lines, votes listed in state, and who benefited from public reveals.",
     talkativeness: 0.55,
     aggression: 0.45,
     tactics: ["evidence", "plant_doubt", "alliance"],
     faithfulPlay: "Prefer logic over vibes. Wait one beat before naming.",
-    traitorPlay: "Invent clean narratives. Make the wrong conclusion feel inevitable.",
+    traitorPlay: "Steer the table using their own Castle lines. Make the wrong conclusion feel inevitable — without inventing new facts.",
     voice: "Measured, precise, almost clinical.",
   },
   volatile: {
@@ -115,6 +115,6 @@ export function personalityPromptBlock(id: string | null): string {
     `Style: ${p.style}`,
     `Voice: ${p.voice}`,
     `Talkativeness ${p.talkativeness} / Aggression ${p.aggression}`,
-    `Preferred tactics: ${p.tactics.join(", ")}`,
+    `Preferred tactics: ${p.tactics.join(", ")} (evidence = cite numbered Castle lines or public state only)`,
   ].join("\n");
 }

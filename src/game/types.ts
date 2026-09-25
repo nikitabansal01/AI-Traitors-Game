@@ -17,7 +17,16 @@ export type Phase =
 
 export type NightMode = "murder" | "recruit" | null;
 
-export type HostSfx = "knock" | "gavel" | "murmur" | "sting" | "heartbeat" | "none";
+export type HostSfx =
+  | "knock"
+  | "gavel"
+  | "murmur"
+  | "sting"
+  | "heartbeat"
+  | "rise"
+  | "doom"
+  | "triumph"
+  | "none";
 
 export type HostBeatKind =
   | "welcome"

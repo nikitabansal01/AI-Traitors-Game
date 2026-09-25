@@ -77,10 +77,10 @@ export const CHARACTERS: Record<CharacterId, Character> = {
     traitorPlay: "Lead the hunt toward the wrong Faithful. Confidence sells it.",
     voice:
       "Confident, competitive, first-person. Short punchy claims. Never apologetic.",
-    tics: ["Listen,", "I know what I saw.", "Come on."],
+    tics: ["Listen,", "Trust me,", "Come on."],
     suggestions: {
       discussion: [
-        "I am looking at {name}. That energy is wrong.",
+        "I am looking at {name}. Say more about what you just said.",
         "Someone has to lead. I am naming {name}.",
         "Do not hide. Speak — especially {name}.",
       ],
@@ -335,7 +335,7 @@ export function characterPromptBlock(id: string | null): string {
     `Style: ${c.blurb}`,
     `Voice: ${c.voice}`,
     `Talkativeness ${c.talkativeness} / Aggression ${c.aggression}`,
-    `Preferred tactics: ${c.tactics.join(", ")}`,
+    `Preferred tactics: ${c.tactics.join(", ")} (evidence = cite numbered Castle lines or public state only)`,
   ].join("\n");
 }
 
@@ -376,18 +376,35 @@ export async function llmVoiceRewrite(
     const client = new OpenAI({ apiKey: key });
     const completion = await client.chat.completions.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.7,
+      temperature: 0.35,
       max_tokens: 120,
       messages: [
         {
           role: "system",
-          content: `Rewrite the user's message in the voice of ${c.label}. Keep the same meaning and intent. Do not invent new accusations or facts. Under 160 characters. No emoji. No quotes around the result. Voice: ${c.voice}`,
+          content: `Rewrite ONLY the tone of this message as ${c.label} at a Traitors round table.
+HARD RULES:
+- Keep the same meaning, names, and claims. Do not add accusations, evidence, events, or details.
+- Do not add celebrity biography or real-world facts.
+- If you cannot rewrite safely, return the original text unchanged.
+- Under 160 characters. No emoji. No quotation marks around the result.
+Voice: ${c.voice}`,
         },
         { role: "user", content: text },
       ],
     });
     const out = completion.choices[0]?.message?.content?.trim();
-    return (out || heuristicVoiceRewrite(characterId, text)).slice(0, 280);
+    if (!out) return heuristicVoiceRewrite(characterId, text);
+    if (out.length > text.trim().length * 2.5 + 40) {
+      return heuristicVoiceRewrite(characterId, text);
+    }
+    // Rewrite must not introduce sensory/mission hallucinations
+    if (
+      /\b(i saw|i heard|overheard|mission|sabotage|clue|letter)\b/i.test(out) &&
+      !/\b(i saw|i heard|overheard|mission|sabotage|clue|letter)\b/i.test(text)
+    ) {
+      return heuristicVoiceRewrite(characterId, text);
+    }
+    return out.slice(0, 280);
   } catch {
     return heuristicVoiceRewrite(characterId, text);
   }

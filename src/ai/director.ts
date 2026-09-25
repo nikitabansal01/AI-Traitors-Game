@@ -5,7 +5,7 @@ import {
   tableName,
 } from "./characters";
 import { PERSONALITIES, personalityPromptBlock } from "./personalities";
-import type { GameState, Player } from "../game/types";
+import type { ChatMessage, GameState, Player } from "../game/types";
 
 export type AiDecision =
   | { type: "chat"; channel: "castle" | "conclave"; text: string }
@@ -13,6 +13,9 @@ export type AiDecision =
   | { type: "finale"; choice: "end" | "banish" }
   | { type: "night"; mode: "murder" | "recruit"; targetId: string }
   | { type: "noop" };
+
+const FORBIDDEN_CHAT =
+  /\b(i saw|i heard|overheard|mission|sabotage|clue|letter|turret door|in your room|last night i|we had a deal|you promised|secret meeting)\b/i;
 
 function living(state: GameState): Player[] {
   return state.players.filter((p) => p.alive);
@@ -26,6 +29,82 @@ function voiceStats(player: Player) {
   );
 }
 
+/** Numbered Castle lines the model may cite as evidence */
+function castleTranscript(messages: ChatMessage[], limit = 24): {
+  block: string;
+  speakers: string[];
+  empty: boolean;
+} {
+  const slice = messages.slice(-limit);
+  if (!slice.length) return { block: "(no Castle messages yet)", speakers: [], empty: true };
+  const speakers = [...new Set(slice.map((m) => m.playerName))];
+  const block = slice
+    .map((m, i) => `#${i + 1} ${m.playerName}: ${m.text}`)
+    .join("\n");
+  return { block, speakers, empty: false };
+}
+
+function publicEventMemory(state: GameState): string {
+  const lines: string[] = [];
+  lines.push(`Day ${state.day} | Phase: ${state.phase}`);
+  lines.push(
+    `Alive (${living(state).length}): ${living(state)
+      .map((p) => tableName(p))
+      .join(", ")}`,
+  );
+  if (state.banishedIds.length) {
+    const banished = state.banishedIds
+      .map((id) => {
+        const pl = state.players.find((x) => x.id === id);
+        return pl ? `${tableName(pl)}=${pl.role}` : null;
+      })
+      .filter(Boolean);
+    lines.push(`Banished (role revealed): ${banished.join(", ")}`);
+  } else {
+    lines.push("Banished: none yet");
+  }
+  lines.push(`Morning note: ${state.morningMessage ?? "none"}`);
+  if (state.lastMurderBlocked) {
+    const shielded = state.players.find((p) => p.id === state.lastMurderedId);
+    lines.push(
+      `Public: a Shield blocked murder${shielded ? ` on ${tableName(shielded)}` : ""}.`,
+    );
+  } else if (state.lastMurderedId && state.phase !== "night") {
+    const victim = state.players.find((p) => p.id === state.lastMurderedId);
+    if (victim) lines.push(`Public: ${tableName(victim)} was murdered (morning reveal).`);
+  }
+  // Public log — factual host/engine lines only
+  const publicLog = state.log
+    .filter((l) => l.public)
+    .slice(-12)
+    .map((l) => `- ${l.text}`);
+  if (publicLog.length) {
+    lines.push("Public log:");
+    lines.push(...publicLog);
+  }
+  return lines.join("\n");
+}
+
+function voteMemory(state: GameState): string {
+  if (
+    state.phase !== "voting" &&
+    state.phase !== "finale_vote" &&
+    state.phase !== "banish_reveal"
+  ) {
+    return "Votes: not public / not in progress (do not invent past votes).";
+  }
+  const entries = Object.entries(state.votes);
+  if (!entries.length) return "Votes: none in yet.";
+  return `Votes so far: ${entries
+    .map(([vid, tid]) => {
+      const v = state.players.find((p) => p.id === vid);
+      const t = state.players.find((p) => p.id === tid);
+      return v && t ? `${tableName(v)}→${tableName(t)}` : null;
+    })
+    .filter(Boolean)
+    .join(", ")}`;
+}
+
 function heuristicDecision(
   state: GameState,
   player: Player,
@@ -33,6 +112,7 @@ function heuristicDecision(
 ): AiDecision {
   const others = living(state).filter((p) => p.id !== player.id);
   const p = voiceStats(player);
+  const { speakers, empty: castleQuiet } = castleTranscript(state.castleChat);
 
   if (opts.preferConclave && player.role === "traitor") {
     const faithful = others.filter((x) => x.role === "faithful");
@@ -41,11 +121,11 @@ function heuristicDecision(
     const lines = state.recruitEligible
       ? [
           `Recruit ${name}? Or murder?`,
-          `${name} looks recruitable.`,
+          `${name} — recruit or cut?`,
           `I'm leaning murder on ${name}. Objections?`,
         ]
       : [
-          `${name} is the loudest threat. Murder?`,
+          `${name} feels like the threat. Murder?`,
           `Keep it quiet — ${name} tonight.`,
           `Who's with me on ${name}?`,
         ];
@@ -69,31 +149,37 @@ function heuristicDecision(
       }
     }
     if (Math.random() > p.talkativeness) return { type: "noop" };
-    const suspect = others[Math.floor(Math.random() * others.length)];
+
+    // Prefer reacting to someone who actually spoke
+    const speakerLiving = speakers
+      .map((name) => others.find((o) => tableName(o) === name))
+      .filter(Boolean) as Player[];
+    const pool = speakerLiving.length ? speakerLiving : others;
+    const suspect = pool[Math.floor(Math.random() * pool.length)];
     if (!suspect) return { type: "noop" };
     const suspectName = tableName(suspect);
-
     const soft = p.aggression < 0.5;
-    const lines =
-      player.role === "traitor"
-        ? soft
-          ? [
-              `I'm not sure yet, but ${suspectName} felt off at breakfast.`,
-              `Can we hear from ${suspectName}? Just curious.`,
-            ]
-          : [
-              `${suspectName} has been awfully quiet. That worries me.`,
-              `Who else is looking at ${suspectName}?`,
-            ]
-        : soft
-          ? [
-              `I need more before I name anyone — ${suspectName}, what's your read?`,
-              `Something's off. I'm watching, not swinging yet.`,
-            ]
-          : [
-              `${suspectName}'s reactions feel rehearsed.`,
-              `${suspectName}, talk to me about last night.`,
-            ];
+
+    const lines = castleQuiet
+      ? soft
+        ? [
+            `${suspectName}, what's your read so far?`,
+            `Anyone watching ${suspectName} yet?`,
+          ]
+        : [
+            `${suspectName} — say something. Silence is loud.`,
+            `Who's looking at ${suspectName}?`,
+          ]
+      : soft
+        ? [
+            `${suspectName}, can you clarify what you just said?`,
+            `I'm stuck on ${suspectName}'s last line — say more.`,
+          ]
+        : [
+            `${suspectName}, that last comment doesn't sit right. Explain.`,
+            `Who else caught what ${suspectName} just said?`,
+          ];
+
     return {
       type: "chat",
       channel: "castle",
@@ -149,11 +235,12 @@ function rolePlaybook(player: Player): string {
     if (player.role === "traitor") {
       return `TRAITOR goals: survive, look Faithful, eliminate threats, coordinate in Conclave.
 Traitor play as ${character.label}: ${character.traitorPlay}
-Never admit you are a Traitor. Never expose Conclave plans in Castle chat.`;
+Never admit you are a Traitor. Never expose Conclave plans in Castle chat.
+Social bluffs OK. Invented events/quotes/missions are NOT.`;
     }
-    return `FAITHFUL goals: find Traitors, avoid murdering trust, don't pile on without a reason.
+    return `FAITHFUL goals: find Traitors using public state + Castle chat.
 Faithful play as ${character.label}: ${character.faithfulPlay}
-Do not invent fake private info. Prefer questions if unsure.`;
+Build doubt only from real lines or public events. Prefer questions if unsure.`;
   }
 
   const p =
@@ -161,11 +248,12 @@ Do not invent fake private info. Prefer questions if unsure.`;
   if (player.role === "traitor") {
     return `TRAITOR goals: survive, look Faithful, eliminate threats, coordinate in Conclave.
 Traitor play for your personality: ${p.traitorPlay}
-Never admit you are a Traitor. Never expose Conclave plans in Castle chat.`;
+Never admit you are a Traitor. Never expose Conclave plans in Castle chat.
+Social bluffs OK. Invented events/quotes/missions are NOT.`;
   }
-  return `FAITHFUL goals: find Traitors, avoid murdering trust, don't pile on without a reason.
+  return `FAITHFUL goals: find Traitors using public state + Castle chat.
 Faithful play for your personality: ${p.faithfulPlay}
-Do not invent fake private info. Prefer questions if unsure.`;
+Build doubt only from real lines or public events. Prefer questions if unsure.`;
 }
 
 function voiceBlock(player: Player): string {
@@ -178,27 +266,14 @@ function buildPrompt(
   player: Player,
   opts: { preferConclave?: boolean } = {},
 ): string {
-  const alive = living(state)
-    .map(
-      (p) =>
-        `${tableName(p)}${p.hasShield && p.id === player.id ? " (you have Shield)" : ""}`,
-    )
-    .join(", ");
-  const recentCastle = state.castleChat
-    .slice(-10)
-    .map((m) => `${m.playerName}: ${m.text}`)
-    .join("\n");
+  const castle = castleTranscript(state.castleChat, 24);
   const recentConclave =
     player.role === "traitor"
-      ? state.conclaveChat.slice(-8).map((m) => `${m.playerName}: ${m.text}`).join("\n")
-      : "(hidden)";
-  const banished = state.banishedIds
-    .map((id) => {
-      const pl = state.players.find((x) => x.id === id);
-      return pl ? `${tableName(pl)}=${pl.role}` : null;
-    })
-    .filter(Boolean)
-    .join(", ");
+      ? state.conclaveChat
+          .slice(-10)
+          .map((m, i) => `#C${i + 1} ${m.playerName}: ${m.text}`)
+          .join("\n") || "(no Conclave messages yet)"
+      : "(hidden — you are not a Traitor)";
 
   const fellowTraitors =
     player.role === "traitor"
@@ -218,29 +293,49 @@ function buildPrompt(
       ? `\nNight: If Conclave has not agreed yet, chat in conclave. If a name is already clear in Conclave, output a night action.`
       : "";
 
-  return `You are ${tableName(player)} in AI Traitors (social deduction like The Traitors TV show).
+  const shieldSelf =
+    player.hasShield ? "You personally hold a Shield (secret to others)." : "You do not hold a Shield.";
+
+  const persuasionGuide = castle.empty
+    ? `Castle is empty. You may ONLY: ask a living player a question, note the morning note, or noop. Do not invent prior conversation.`
+    : `Persuasion from MEMORY (required when casting doubt):
+- Cite a Castle line by number, e.g. "On #3 you said…" or paraphrase that line only.
+- Or cite a PUBLIC STATE / log fact (banishment, morning note, listed votes).
+- plant_doubt / evidence / pressure must attach to a real #line or public fact.
+- Do not invent contradictions that are not in the transcript.`;
+
+  return `You are ${tableName(player)} in AI Traitors.
+Voice/style only if Pro character — you are at this castle table, not living the celebrity's real life.
 
 ${voiceBlock(player)}
 ${rolePlaybook(player)}
 
-Phase: ${state.phase} | Day ${state.day} | Mode: ${state.config.gameMode}
-Alive: ${alive}
-Banished so far: ${banished || "none"}
-Morning note: ${state.morningMessage ?? "n/a"}
+=== KNOWN PUBLIC STATE (authoritative — memorize this) ===
+${publicEventMemory(state)}
+${voteMemory(state)}
 Recruit available tonight: ${state.recruitEligible ? "yes" : "no"}
-${player.role === "traitor" ? `Fellow Traitors: ${fellowTraitors}` : ""}
+${shieldSelf}
+${player.role === "traitor" ? `PRIVATE (Traitors only): Fellow Traitors = ${fellowTraitors}` : "PRIVATE: you do not know who the Traitors are."}
 
-Castle chat (public):
-${recentCastle || "(quiet)"}
+=== UNKNOWN (never claim these as fact) ===
+- Who murdered whom beyond the morning note
+- Other players' Shields
+- Secret deals, private chats, missions, clues, letters, overheard night sounds
+- Votes not listed above
+- Anything not in Castle transcript or public state
 
-Conclave (Traitors only):
-${recentConclave || "(quiet — speak up)"}
+=== CASTLE TRANSCRIPT (public memory — your evidence base) ===
+Speakers so far: ${castle.speakers.join(", ") || "none"}
+${castle.block}
+
+=== CONCLAVE ===
+${recentConclave}
 ${conclaveForce}${nightHint}
 
-Persuasion: pick ONE tactic from your preferred list that fits this moment. Sound human — not like a narrator.
+${persuasionGuide}
 
 Reply with ONLY compact JSON (no markdown):
-{"type":"chat","channel":"castle"|"conclave","text":"..."} 
+{"type":"chat","channel":"castle"|"conclave","text":"..."}
 {"type":"vote","targetId":"<id>"}
 {"type":"finale","choice":"end"|"banish"}
 {"type":"night","mode":"murder"|"recruit","targetId":"<id>"}
@@ -252,11 +347,15 @@ Living player ids: ${living(state)
 
 Rules:
 - Faithful never use channel conclave.
-- Traitors use conclave to plan; Castle is for performing as Faithful.
-- Chat under 160 characters.
+- Traitors: Conclave to plan; Castle performs as Faithful — never leak Conclave.
+- Chat under 160 characters. No emoji.
 - During discussion prefer chat or noop (not vote).
 - During voting/finale_vote you MUST vote if alive.
-- Stay in voice. No emoji.`;
+- Stay in voice.`;
+}
+
+function chatLooksHallucinated(text: string): boolean {
+  return FORBIDDEN_CHAT.test(text);
 }
 
 export async function decideForAi(
@@ -272,13 +371,13 @@ export async function decideForAi(
     const client = new OpenAI({ apiKey: key });
     const completion = await client.chat.completions.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.95,
+      temperature: 0.55,
       max_tokens: 200,
       messages: [
         {
           role: "system",
           content:
-            "You are a contestant in a social-deduction game. Stay in character. Output a single JSON object only.",
+            "Social-deduction contestant. Your memory is ONLY the state block and numbered Castle/Conclave lines in the user message. Persuade by citing those. Never invent events, quotes, or evidence. Prefer questions if the transcript is thin. Output one JSON object only.",
         },
         { role: "user", content: buildPrompt(state, player, opts) },
       ],
@@ -295,6 +394,9 @@ export async function decideForAi(
       if (parsed.type !== "chat" || parsed.channel !== "conclave") {
         return heuristicDecision(state, player, opts);
       }
+    }
+    if (parsed.type === "chat" && chatLooksHallucinated(parsed.text)) {
+      return heuristicDecision(state, player, opts);
     }
     return parsed;
   } catch {
