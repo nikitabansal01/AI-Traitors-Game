@@ -23,6 +23,26 @@ import { decideForAi, pickAiActors, pickAiTraitors, type AiDecision } from "../s
 
 type Conn = Party.Connection & { playerId?: string };
 
+/** Spacing so punchy lines can land */
+const TIMING = {
+  /** After host cinematic, wait before first AI beat */
+  afterCinematicMs: 4_000,
+  /** First Castle voice after game start */
+  afterStartMs: 7_500,
+  /** Discussion: attempt one Castle AI beat */
+  castleBeatMs: 28_000,
+  /** Discussion: Conclave whispers */
+  conclaveBeatMs: 38_000,
+  /** Voting / night / finale action polls */
+  actionBeatMs: 12_000,
+  /** Min gap between any two AI Castle messages (table-wide) */
+  castleTableGapMs: 16_000,
+  /** Min gap before the same AI speaks in Castle again */
+  castlePerAiGapMs: 36_000,
+  /** Stagger when multiple AI act in one beat */
+  multiActorStaggerMs: 3_200,
+};
+
 function roomCodeFromId(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase() || "CASTLE";
 }
@@ -32,6 +52,8 @@ export default class TraitorsRoom implements Party.Server {
   aiBusy = false;
   /** playerId -> last castle chat timestamp */
   lastAiChatAt = new Map<string, number>();
+  /** Last time any AI posted to Castle */
+  lastCastleAnyAt = 0;
   /** Conclave messages this night before locking a murder */
   nightConclaveBeats = 0;
 
@@ -78,28 +100,28 @@ export default class TraitorsRoom implements Party.Server {
       const changed = tick(this.state);
       if (changed) {
         this.broadcastViews();
-        // Brief pause after cinematic phase change, then one AI beat
+        // Let the host beat land, then one AI voice
         setTimeout(() => {
           if (this.state.phase === "night") void this.runAiBeat("night");
           else if (this.state.phase === "discussion") void this.runAiBeat("castle");
           else void this.runAiBeat("default");
-        }, 2500);
+        }, TIMING.afterCinematicMs);
       }
     }, 1000);
 
-    // Discussion pace: one Castle voice ~every 18s
+    // Discussion pace: spaced Castle voices
     setInterval(() => {
       if (this.state.phase === "discussion") {
         void this.runAiBeat("castle");
       }
-    }, 18_000);
+    }, TIMING.castleBeatMs);
 
-    // Traitors whisper in Conclave during the day too
+    // Traitors whisper in Conclave during the day (slower than Castle)
     setInterval(() => {
       if (this.state.phase === "discussion") {
         void this.runAiBeat("conclave");
       }
-    }, 24_000);
+    }, TIMING.conclaveBeatMs);
 
     // Voting / night / finale
     setInterval(() => {
@@ -113,7 +135,7 @@ export default class TraitorsRoom implements Party.Server {
       if (this.state.phase === "night") {
         void this.runAiBeat("night");
       }
-    }, 10_000);
+    }, TIMING.actionBeatMs);
   }
 
   async handleAction(
@@ -143,7 +165,7 @@ export default class TraitorsRoom implements Party.Server {
       case "start_game": {
         if (!playerId) return { ok: false, error: "Not seated" };
         const r = startGame(this.state, playerId);
-        if (r.ok) setTimeout(() => void this.runAiBeat("castle"), 5500);
+        if (r.ok) setTimeout(() => void this.runAiBeat("castle"), TIMING.afterStartMs);
         return r;
       }
       case "chat": {
@@ -203,11 +225,14 @@ export default class TraitorsRoom implements Party.Server {
   applyAiDecision(playerId: string, decision: AiDecision) {
     switch (decision.type) {
       case "chat": {
-        // Rate-limit Castle chat so the table stays readable
+        // Rate-limit Castle chat so punchy lines don't stack
         if (decision.channel === "castle") {
+          const now = Date.now();
+          if (now - this.lastCastleAnyAt < TIMING.castleTableGapMs) return;
           const last = this.lastAiChatAt.get(playerId) ?? 0;
-          if (Date.now() - last < 22_000) return;
-          this.lastAiChatAt.set(playerId, Date.now());
+          if (now - last < TIMING.castlePerAiGapMs) return;
+          this.lastAiChatAt.set(playerId, now);
+          this.lastCastleAnyAt = now;
         }
         addChat(this.state, playerId, decision.channel, decision.text);
         break;
@@ -271,7 +296,7 @@ export default class TraitorsRoom implements Party.Server {
         this.applyAiDecision(actor.id, decision);
         this.broadcastViews();
         if (actors.length > 1) {
-          await new Promise((r) => setTimeout(r, 2200));
+          await new Promise((r) => setTimeout(r, TIMING.multiActorStaggerMs));
         }
       }
     } finally {

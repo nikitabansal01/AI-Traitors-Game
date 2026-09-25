@@ -96,9 +96,9 @@ export interface GameConfig {
 export const DEFAULT_CONFIG: GameConfig = {
   castSize: 10,
   traitorCount: 3,
-  discussionSeconds: 45,
-  votingSeconds: 30,
-  nightSeconds: 40,
+  discussionSeconds: 75,
+  votingSeconds: 35,
+  nightSeconds: 45,
   prizePot: 100_000,
   gameMode: "amateurs",
 };
