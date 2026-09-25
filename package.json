@@ -1,0 +1,38 @@
+{
+  "name": "ai-traitors",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n next,party -c blue,magenta \"next dev\" \"partykit dev\"",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "dev:next": "next dev",
+    "dev:party": "partykit dev",
+    "test:engine": "tsx src/game/engine.test.ts",
+    "smoke": "node scripts/smoke-room.mjs"
+  },
+  "dependencies": {
+    "concurrently": "^10.0.5",
+    "nanoid": "^6.0.1",
+    "next": "16.3.6",
+    "openai": "^7.23.0",
+    "partykit": "^0.0.115",
+    "partysocket": "^1.3.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "ws": "^8.21.3"
+  }
+}

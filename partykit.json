@@ -1,0 +1,5 @@
+{
+  "name": "ai-traitors",
+  "main": "party/server.ts",
+  "compatibilityDate": "2024-04-01"
+}
