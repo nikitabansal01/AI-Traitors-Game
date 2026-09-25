@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ClientAction, ClientGameView } from "@/game/types";
+import { CHARACTERS, CHARACTER_IDS } from "@/ai/characters";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
+import type { ClientAction, ClientGameView, GameMode } from "@/game/types";
 
 export function Lobby({
   view,
@@ -21,6 +23,11 @@ export function Lobby({
   const isHost = view.hostId === playerId;
   const humans = view.players.filter((p) => p.kind === "human");
   const aiSlots = Math.max(0, view.config.castSize - humans.length);
+  const isPro = view.config.gameMode === "pro";
+  const you = view.players.find((p) => p.id === playerId);
+  const taken = new Set(
+    view.players.map((p) => p.characterId).filter(Boolean) as string[],
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem("ai-traitors-name");
@@ -35,6 +42,10 @@ export function Lobby({
     send({ type: "claim_seat", name: n, playerId });
   }
 
+  function setMode(mode: GameMode) {
+    send({ type: "set_game_mode", mode });
+  }
+
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
       <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
@@ -44,8 +55,43 @@ export function Lobby({
         The Lobby
       </h1>
       <p className="mt-2 text-[var(--muted)]">
-        Humans take seats. AI fills the rest when the host starts.
+        {isPro
+          ? "Pro: pick a character. AI fills remaining faces."
+          : "Amateurs: humans take seats. AI fills the rest."}
       </p>
+
+      {isHost && seated && (
+        <div className="mt-6 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("amateurs")}
+            className={`px-3 py-3 text-sm ${
+              !isPro
+                ? "bg-[var(--ember)] text-[var(--night)]"
+                : "ring-1 ring-[var(--line)] text-[var(--ink)]"
+            }`}
+          >
+            Amateurs
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("pro")}
+            className={`px-3 py-3 text-sm ${
+              isPro
+                ? "bg-[var(--ember)] text-[var(--night)]"
+                : "ring-1 ring-[var(--line)] text-[var(--ink)]"
+            }`}
+          >
+            Pro
+          </button>
+        </div>
+      )}
+
+      {!isHost && seated && (
+        <p className="mt-4 text-xs uppercase tracking-[0.2em] text-[var(--ember)]">
+          {isPro ? "Pro" : "Amateurs"}
+        </p>
+      )}
 
       {!seated ? (
         <form onSubmit={join} className="mt-8 flex gap-2">
@@ -69,21 +115,71 @@ export function Lobby({
 
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 
+      {isPro && seated && (
+        <div className="mt-8">
+          <p className="mb-3 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+            Your character
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {CHARACTER_IDS.map((id) => {
+              const c = CHARACTERS[id];
+              const selected = you?.characterId === id;
+              const locked = taken.has(id) && !selected;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={locked}
+                  onClick={() => send({ type: "set_character", characterId: id })}
+                  className={`flex items-start gap-3 px-3 py-3 text-left ring-1 transition ${
+                    selected
+                      ? "bg-[var(--ember)]/15 ring-[var(--ember)]"
+                      : locked
+                        ? "opacity-40 ring-[var(--line)]"
+                        : "ring-[var(--line)] hover:ring-[var(--ember)]/60"
+                  }`}
+                >
+                  <CharacterAvatar initials={c.initials} hue={c.hue} />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-[var(--ink)]">{c.label}</span>
+                    <span className="block text-xs text-[var(--muted)]">{c.blurb}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <ul className="mt-8 space-y-2">
         {humans.map((p) => (
           <li
             key={p.id}
-            className="flex justify-between border border-[var(--line)] bg-[var(--panel)] px-4 py-3"
+            className="flex items-center justify-between gap-3 border border-[var(--line)] bg-[var(--panel)] px-4 py-3"
           >
-            <span>{p.name}{p.id === playerId ? " (you)" : ""}</span>
-            <span className="text-xs text-[var(--muted)]">
+            <span className="flex min-w-0 items-center gap-3">
+              {isPro && (
+                <CharacterAvatar
+                  initials={p.characterInitials}
+                  hue={p.characterHue}
+                  size="sm"
+                />
+              )}
+              <span className="truncate">
+                {p.name}
+                {p.id === playerId ? " (you)" : ""}
+              </span>
+            </span>
+            <span className="shrink-0 text-xs text-[var(--muted)]">
               {p.id === view.hostId ? "Host" : "Human"}
+              {isPro && !p.characterId ? " · pick" : ""}
             </span>
           </li>
         ))}
         {aiSlots > 0 && (
           <li className="border border-dashed border-[var(--line)] px-4 py-3 text-[var(--muted)]">
-            + {aiSlots} AI player{aiSlots === 1 ? "" : "s"} on start
+            + {aiSlots} AI {isPro ? "character" : "player"}
+            {aiSlots === 1 ? "" : "s"} on start
           </li>
         )}
       </ul>
@@ -95,7 +191,7 @@ export function Lobby({
             <input
               type="number"
               min={6}
-              max={16}
+              max={isPro ? 10 : 16}
               value={view.config.castSize}
               onChange={(e) =>
                 send({ type: "set_cast_size", size: Number(e.target.value) })
@@ -104,7 +200,7 @@ export function Lobby({
             />
           </label>
           <p className="text-xs text-[var(--muted)]">
-            {view.config.traitorCount} Traitors will be chosen at random.
+            {view.config.traitorCount} Traitors · {isPro ? "Pro roleplay" : "Amateurs MVP"}
           </p>
           <button
             type="button"

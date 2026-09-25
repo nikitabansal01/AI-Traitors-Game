@@ -41,6 +41,10 @@ export default function HomePage() {
           Join the cast. AI fills empty seats. Faithfuls hunt. Traitors murder.
           Someone at this table is lying.
         </p>
+        <p className="mt-4 text-sm text-[var(--muted)]">
+          <span className="text-[var(--ink)]">Amateurs</span> — classic MVP.{" "}
+          <span className="text-[var(--ink)]">Pro</span> — play as famous characters.
+        </p>
 
         <div className="mt-12 flex flex-col gap-4 sm:flex-row sm:items-stretch">
           <button

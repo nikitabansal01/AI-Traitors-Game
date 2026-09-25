@@ -1,4 +1,9 @@
 import OpenAI from "openai";
+import {
+  characterPromptBlock,
+  getCharacter,
+  tableName,
+} from "./characters";
 import { PERSONALITIES, personalityPromptBlock } from "./personalities";
 import type { GameState, Player } from "../game/types";
 
@@ -13,19 +18,26 @@ function living(state: GameState): Player[] {
   return state.players.filter((p) => p.alive);
 }
 
+function voiceStats(player: Player) {
+  const character = getCharacter(player.characterId);
+  if (character) return character;
+  return (
+    PERSONALITIES[player.personalityId ?? "analytical"] ?? PERSONALITIES.analytical!
+  );
+}
+
 function heuristicDecision(
   state: GameState,
   player: Player,
   opts: { preferConclave?: boolean } = {},
 ): AiDecision {
   const others = living(state).filter((p) => p.id !== player.id);
-  const p =
-    PERSONALITIES[player.personalityId ?? "analytical"] ?? PERSONALITIES.analytical!;
+  const p = voiceStats(player);
 
   if (opts.preferConclave && player.role === "traitor") {
     const faithful = others.filter((x) => x.role === "faithful");
     const target = faithful[Math.floor(Math.random() * Math.max(faithful.length, 1))];
-    const name = target?.name ?? "someone";
+    const name = target ? tableName(target) : "someone";
     const lines = state.recruitEligible
       ? [
           `Recruit ${name}? Or murder?`,
@@ -52,34 +64,35 @@ function heuristicDecision(
         return {
           type: "chat",
           channel: "conclave",
-          text: `At the table, keep heat on ${suspect.name}. Don't overplay it.`,
+          text: `At the table, keep heat on ${tableName(suspect)}. Don't overplay it.`,
         };
       }
     }
     if (Math.random() > p.talkativeness) return { type: "noop" };
     const suspect = others[Math.floor(Math.random() * others.length)];
     if (!suspect) return { type: "noop" };
+    const suspectName = tableName(suspect);
 
     const soft = p.aggression < 0.5;
     const lines =
       player.role === "traitor"
         ? soft
           ? [
-              `I'm not sure yet, but ${suspect.name} felt off at breakfast.`,
-              `Can we hear from ${suspect.name}? Just curious.`,
+              `I'm not sure yet, but ${suspectName} felt off at breakfast.`,
+              `Can we hear from ${suspectName}? Just curious.`,
             ]
           : [
-              `${suspect.name} has been awfully quiet. That worries me.`,
-              `Who else is looking at ${suspect.name}?`,
+              `${suspectName} has been awfully quiet. That worries me.`,
+              `Who else is looking at ${suspectName}?`,
             ]
         : soft
           ? [
-              `I need more before I name anyone — ${suspect.name}, what's your read?`,
+              `I need more before I name anyone — ${suspectName}, what's your read?`,
               `Something's off. I'm watching, not swinging yet.`,
             ]
           : [
-              `${suspect.name}'s reactions feel rehearsed.`,
-              `${suspect.name}, talk to me about last night.`,
+              `${suspectName}'s reactions feel rehearsed.`,
+              `${suspectName}, talk to me about last night.`,
             ];
     return {
       type: "chat",
@@ -112,7 +125,9 @@ function heuristicDecision(
       return {
         type: "chat",
         channel: "conclave",
-        text: pick ? `Turret time. I want ${pick.name}. Agree?` : `Who are we taking tonight?`,
+        text: pick
+          ? `Turret time. I want ${tableName(pick)}. Agree?`
+          : `Who are we taking tonight?`,
       };
     }
     const faithful = others.filter((x) => x.role === "faithful");
@@ -129,6 +144,18 @@ function heuristicDecision(
 }
 
 function rolePlaybook(player: Player): string {
+  const character = getCharacter(player.characterId);
+  if (character) {
+    if (player.role === "traitor") {
+      return `TRAITOR goals: survive, look Faithful, eliminate threats, coordinate in Conclave.
+Traitor play as ${character.label}: ${character.traitorPlay}
+Never admit you are a Traitor. Never expose Conclave plans in Castle chat.`;
+    }
+    return `FAITHFUL goals: find Traitors, avoid murdering trust, don't pile on without a reason.
+Faithful play as ${character.label}: ${character.faithfulPlay}
+Do not invent fake private info. Prefer questions if unsure.`;
+  }
+
   const p =
     PERSONALITIES[player.personalityId ?? "analytical"] ?? PERSONALITIES.analytical!;
   if (player.role === "traitor") {
@@ -141,13 +168,21 @@ Faithful play for your personality: ${p.faithfulPlay}
 Do not invent fake private info. Prefer questions if unsure.`;
 }
 
+function voiceBlock(player: Player): string {
+  if (player.characterId) return characterPromptBlock(player.characterId);
+  return personalityPromptBlock(player.personalityId);
+}
+
 function buildPrompt(
   state: GameState,
   player: Player,
   opts: { preferConclave?: boolean } = {},
 ): string {
   const alive = living(state)
-    .map((p) => `${p.name}${p.hasShield && p.id === player.id ? " (you have Shield)" : ""}`)
+    .map(
+      (p) =>
+        `${tableName(p)}${p.hasShield && p.id === player.id ? " (you have Shield)" : ""}`,
+    )
     .join(", ");
   const recentCastle = state.castleChat
     .slice(-10)
@@ -160,7 +195,7 @@ function buildPrompt(
   const banished = state.banishedIds
     .map((id) => {
       const pl = state.players.find((x) => x.id === id);
-      return pl ? `${pl.name}=${pl.role}` : null;
+      return pl ? `${tableName(pl)}=${pl.role}` : null;
     })
     .filter(Boolean)
     .join(", ");
@@ -169,7 +204,7 @@ function buildPrompt(
     player.role === "traitor"
       ? living(state)
           .filter((p) => p.role === "traitor" && p.id !== player.id)
-          .map((p) => p.name)
+          .map((p) => tableName(p))
           .join(", ") || "none yet"
       : "";
 
@@ -183,12 +218,12 @@ function buildPrompt(
       ? `\nNight: If Conclave has not agreed yet, chat in conclave. If a name is already clear in Conclave, output a night action.`
       : "";
 
-  return `You are ${player.name} in AI Traitors (social deduction like The Traitors TV show).
+  return `You are ${tableName(player)} in AI Traitors (social deduction like The Traitors TV show).
 
-${personalityPromptBlock(player.personalityId)}
+${voiceBlock(player)}
 ${rolePlaybook(player)}
 
-Phase: ${state.phase} | Day ${state.day}
+Phase: ${state.phase} | Day ${state.day} | Mode: ${state.config.gameMode}
 Alive: ${alive}
 Banished so far: ${banished || "none"}
 Morning note: ${state.morningMessage ?? "n/a"}
@@ -212,7 +247,7 @@ Reply with ONLY compact JSON (no markdown):
 {"type":"noop"}
 
 Living player ids: ${living(state)
-    .map((p) => `${p.name}=${p.id}`)
+    .map((p) => `${tableName(p)}=${p.id}`)
     .join(", ")}
 
 Rules:
@@ -276,8 +311,8 @@ export function pickAiActors(state: GameState, limit = 2): Player[] {
     return ais.filter((p) => !state.votes[p.id] && !state.finaleChoices[p.id]);
   }
   const weighted = [...ais].sort((a, b) => {
-    const pa = PERSONALITIES[a.personalityId ?? ""]?.talkativeness ?? 0.5;
-    const pb = PERSONALITIES[b.personalityId ?? ""]?.talkativeness ?? 0.5;
+    const pa = voiceStats(a).talkativeness;
+    const pb = voiceStats(b).talkativeness;
     return pb + Math.random() * 0.3 - (pa + Math.random() * 0.3);
   });
   return weighted.slice(0, limit);

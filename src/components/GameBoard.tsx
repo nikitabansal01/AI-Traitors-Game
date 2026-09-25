@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { ChatPanel } from "@/components/ChatPanel";
 import { CinematicOverlay, HostStrip, useMuted } from "@/components/HostCinematic";
 import type { ClientAction, ClientGameView } from "@/game/types";
@@ -58,6 +59,7 @@ export function GameBoard({
   const living = view.players.filter((p) => p.alive);
   const [muted, setMuted] = useMuted();
   const nightDim = view.phase === "night" && !view.you?.isTraitor;
+  const isPro = view.config.gameMode === "pro";
 
   return (
     <div className={nightDim ? "phase-night-dim" : undefined}>
@@ -74,7 +76,7 @@ export function GameBoard({
             <div className="flex flex-wrap items-end justify-between gap-2 sm:gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] uppercase tracking-[0.25em] text-[var(--muted)] sm:text-xs">
-                  Day {view.day} · Room {view.roomCode}
+                  Day {view.day} · Room {view.roomCode} · {isPro ? "Pro" : "Amateurs"}
                 </p>
                 <h1 className="font-[family-name:var(--font-display)] text-2xl text-[var(--ink)] sm:text-3xl md:text-4xl">
                   {phaseLabel(view.phase)}
@@ -119,10 +121,17 @@ export function GameBoard({
               {view.players.map((p) => (
                 <li
                   key={p.id}
-                  className={`shrink-0 rounded-sm px-2.5 py-1.5 text-xs ring-1 ring-[var(--line)] ${
+                  className={`flex shrink-0 items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-xs ring-1 ring-[var(--line)] ${
                     p.alive ? "bg-[var(--panel-2)]" : "opacity-40 line-through"
                   }`}
                 >
+                  {isPro && (
+                    <CharacterAvatar
+                      initials={p.characterInitials}
+                      hue={p.characterHue}
+                      size="sm"
+                    />
+                  )}
                   <span className="text-[var(--ink)]">{p.name}</span>
                   {p.id === playerId && (
                     <span className="ml-1 text-[var(--ember)]">·you</span>
@@ -269,20 +278,29 @@ export function GameBoard({
               {view.players.map((p) => (
                 <li
                   key={p.id}
-                  className={`flex items-center justify-between px-2 py-1.5 text-sm ${
+                  className={`flex items-center justify-between gap-2 px-2 py-1.5 text-sm ${
                     p.alive ? "" : "opacity-45 line-through"
                   }`}
                 >
-                  <span>
-                    {p.name}
-                    {p.kind === "ai" ? (
-                      <span className="ml-1.5 text-[10px] text-[var(--muted)]">AI</span>
-                    ) : null}
-                    {p.id === playerId ? (
-                      <span className="ml-1.5 text-[10px] text-[var(--ember)]">you</span>
-                    ) : null}
+                  <span className="flex min-w-0 items-center gap-2">
+                    {isPro && (
+                      <CharacterAvatar
+                        initials={p.characterInitials}
+                        hue={p.characterHue}
+                        size="sm"
+                      />
+                    )}
+                    <span className="truncate">
+                      {p.name}
+                      {p.kind === "ai" ? (
+                        <span className="ml-1.5 text-[10px] text-[var(--muted)]">AI</span>
+                      ) : null}
+                      {p.id === playerId ? (
+                        <span className="ml-1.5 text-[10px] text-[var(--ember)]">you</span>
+                      ) : null}
+                    </span>
                   </span>
-                  <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--muted)]">
                     {p.revealedRole ?? (p.alive ? "—" : "gone")}
                   </span>
                 </li>

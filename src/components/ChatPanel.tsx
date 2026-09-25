@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { fillSuggestion, getCharacter } from "@/ai/characters";
 import type { ClientAction, ClientGameView } from "@/game/types";
 
 export function ChatPanel({
@@ -14,10 +15,30 @@ export function ChatPanel({
 }) {
   const [tab, setTab] = useState<"castle" | "conclave">("castle");
   const [text, setText] = useState("");
+  const [asCharacter, setAsCharacter] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const channel = tab === "conclave" && canConclave ? "conclave" : "castle";
   const messages = channel === "conclave" ? view.conclaveChat : view.castleChat;
   const canSpeak = Boolean(view.you?.alive) || view.phase === "ended";
+  const isPro = view.config.gameMode === "pro" && Boolean(view.yourCharacterId);
+  const character = getCharacter(view.yourCharacterId);
+
+  const livingNames = useMemo(
+    () => view.players.filter((p) => p.alive).map((p) => p.name),
+    [view.players],
+  );
+  const youName = view.players.find((p) => p.id === view.you?.id)?.name;
+
+  const suggestions = useMemo(() => {
+    if (!character) return [];
+    const pool =
+      channel === "conclave"
+        ? character.suggestions.conclave
+        : view.phase === "voting" || view.phase === "finale_vote"
+          ? character.suggestions.voting
+          : character.suggestions.discussion;
+    return pool.slice(0, 3).map((t) => fillSuggestion(t, livingNames, youName));
+  }, [character, channel, view.phase, livingNames, youName]);
 
   useEffect(() => {
     if (!canConclave) {
@@ -40,7 +61,12 @@ export function ChatPanel({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim() || !canSpeak) return;
-    send({ type: "chat", channel, text });
+    send({
+      type: "chat",
+      channel,
+      text,
+      asCharacter: isPro && asCharacter,
+    });
     setText("");
   }
 
@@ -88,31 +114,59 @@ export function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
+      {isPro && canSpeak && suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-t border-[var(--line)] px-2 py-2">
+          {suggestions.map((line) => (
+            <button
+              key={line}
+              type="button"
+              onClick={() => setText(line)}
+              className="max-w-full truncate bg-[var(--panel-2)] px-2 py-1 text-left text-[11px] text-[var(--muted)] ring-1 ring-[var(--line)] hover:text-[var(--ink)] hover:ring-[var(--ember)]/50"
+            >
+              {line}
+            </button>
+          ))}
+        </div>
+      )}
+
       <form
         onSubmit={submit}
-        className="sticky bottom-0 flex gap-2 border-t border-[var(--line)] bg-[var(--night)]/95 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur"
+        className="sticky bottom-0 border-t border-[var(--line)] bg-[var(--night)]/95 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur"
       >
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          disabled={!canSpeak}
-          placeholder={
-            canSpeak
-              ? channel === "conclave"
-                ? "Message Traitors…"
-                : "Message Castle…"
-              : "Spectating"
-          }
-          className="min-w-0 flex-1 bg-[var(--panel-2)] px-3 py-2.5 text-sm text-[var(--ink)] outline-none ring-1 ring-[var(--line)] focus:ring-[var(--ember)]"
-          maxLength={280}
-        />
-        <button
-          type="submit"
-          disabled={!canSpeak}
-          className="bg-[var(--ember)] px-4 py-2.5 text-sm font-medium text-[var(--night)] disabled:opacity-40"
-        >
-          Send
-        </button>
+        {isPro && (
+          <label className="mb-1.5 flex items-center gap-2 px-1 text-[11px] text-[var(--muted)]">
+            <input
+              type="checkbox"
+              checked={asCharacter}
+              onChange={(e) => setAsCharacter(e.target.checked)}
+              className="accent-[var(--ember)]"
+            />
+            Send as {character?.label ?? "character"}
+          </label>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={!canSpeak}
+            placeholder={
+              canSpeak
+                ? channel === "conclave"
+                  ? "Message Traitors…"
+                  : "Message Castle…"
+                : "Spectating"
+            }
+            className="min-w-0 flex-1 bg-[var(--panel-2)] px-3 py-2.5 text-sm text-[var(--ink)] outline-none ring-1 ring-[var(--line)] focus:ring-[var(--ember)]"
+            maxLength={280}
+          />
+          <button
+            type="submit"
+            disabled={!canSpeak}
+            className="bg-[var(--ember)] px-4 py-2.5 text-sm font-medium text-[var(--night)] disabled:opacity-40"
+          >
+            Send
+          </button>
+        </div>
       </form>
     </div>
   );

@@ -1,4 +1,5 @@
 import type * as Party from "partykit/server";
+import { llmVoiceRewrite } from "../src/ai/characters";
 import {
   addChat,
   advancePhase,
@@ -9,7 +10,9 @@ import {
   ensureAiVotes,
   getClientView,
   setCastSize,
+  setCharacter,
   setFinaleChoice,
+  setGameMode,
   setNightMode,
   setNightTarget,
   startGame,
@@ -63,13 +66,11 @@ export default class TraitorsRoom implements Party.Server {
     const playerId =
       s.playerId ?? ("playerId" in data ? (data as { playerId?: string }).playerId : null);
 
-    const result = this.handleAction(data, playerId ?? null, s);
+    const result = await this.handleAction(data, playerId ?? null, s);
     if (result && !result.ok) {
       sender.send(JSON.stringify({ type: "error", error: result.error }));
     }
     this.broadcastViews();
-    // Don't kick an AI reply on every human chat — that floods the table.
-    // AI speaks on its own cadence (see onStart) and after phase changes.
   }
 
   onStart() {
@@ -115,11 +116,11 @@ export default class TraitorsRoom implements Party.Server {
     }, 10_000);
   }
 
-  handleAction(
+  async handleAction(
     data: ClientAction,
     playerId: string | null,
     sender: Conn,
-  ): { ok: boolean; error?: string } | void {
+  ): Promise<{ ok: boolean; error?: string } | void> {
     switch (data.type) {
       case "claim_seat": {
         const id = data.playerId || playerId;
@@ -131,6 +132,14 @@ export default class TraitorsRoom implements Party.Server {
         if (!playerId) return { ok: false, error: "Not seated" };
         return setCastSize(this.state, data.size, playerId);
       }
+      case "set_game_mode": {
+        if (!playerId) return { ok: false, error: "Not seated" };
+        return setGameMode(this.state, data.mode, playerId);
+      }
+      case "set_character": {
+        if (!playerId) return { ok: false, error: "Not seated" };
+        return setCharacter(this.state, playerId, data.characterId);
+      }
       case "start_game": {
         if (!playerId) return { ok: false, error: "Not seated" };
         const r = startGame(this.state, playerId);
@@ -139,7 +148,18 @@ export default class TraitorsRoom implements Party.Server {
       }
       case "chat": {
         if (!playerId) return { ok: false, error: "Not seated" };
-        return addChat(this.state, playerId, data.channel, data.text);
+        let text = data.text;
+        if (
+          data.asCharacter &&
+          this.state.config.gameMode === "pro"
+        ) {
+          const player = this.state.players.find((p) => p.id === playerId);
+          if (player?.characterId) {
+            const key = this.room.env.OPENAI_API_KEY as string | undefined;
+            text = await llmVoiceRewrite(player.characterId, text, key);
+          }
+        }
+        return addChat(this.state, playerId, data.channel, text);
       }
       case "vote": {
         if (!playerId) return { ok: false, error: "Not seated" };

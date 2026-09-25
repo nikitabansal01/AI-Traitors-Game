@@ -1,6 +1,8 @@
 export type Role = "faithful" | "traitor";
 export type PlayerKind = "human" | "ai";
 export type ChatChannel = "castle" | "conclave";
+/** Amateurs = MVP v0. Pro = character roleplay. */
+export type GameMode = "amateurs" | "pro";
 
 export type Phase =
   | "lobby"
@@ -47,7 +49,10 @@ export interface Player {
   role: Role | null;
   alive: boolean;
   hasShield: boolean;
+  /** Amateurs AI archetypes (paranoid, charming, …) */
   personalityId: string | null;
+  /** Pro mode famous character id */
+  characterId: string | null;
   connected: boolean;
 }
 
@@ -75,6 +80,8 @@ export interface GameConfig {
   votingSeconds: number;
   nightSeconds: number;
   prizePot: number;
+  /** Default Amateurs preserves MVP v0 */
+  gameMode: GameMode;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -84,6 +91,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   votingSeconds: 30,
   nightSeconds: 40,
   prizePot: 100_000,
+  gameMode: "amateurs",
 };
 
 export interface GameState {
@@ -143,9 +151,15 @@ export interface ClientGameView {
     alive: boolean;
     hasShield: boolean;
     connected: boolean;
+    characterId: string | null;
+    characterLabel: string | null;
+    characterInitials: string | null;
+    characterHue: number | null;
     /** Only revealed after banishment or game end, or if you are traitor seeing fellow traitors */
     revealedRole: Role | null;
   }>;
+  /** Your character in Pro mode */
+  yourCharacterId: string | null;
   votes: Record<string, string>;
   yourVote: string | null;
   nightTargetId: string | null;
@@ -173,8 +187,10 @@ export interface ClientGameView {
 export type ClientAction =
   | { type: "claim_seat"; name: string; playerId: string }
   | { type: "set_cast_size"; size: number }
+  | { type: "set_game_mode"; mode: GameMode }
+  | { type: "set_character"; characterId: string }
   | { type: "start_game" }
-  | { type: "chat"; channel: ChatChannel; text: string }
+  | { type: "chat"; channel: ChatChannel; text: string; asCharacter?: boolean }
   | { type: "vote"; targetId: string }
   | { type: "night_mode"; mode: "murder" | "recruit" }
   | { type: "night_target"; targetId: string }

@@ -1,4 +1,9 @@
 import { nanoid } from "nanoid";
+import {
+  CHARACTER_IDS,
+  getCharacter,
+  tableName,
+} from "../ai/characters";
 import { attachHostBeat } from "./host";
 import {
   DEFAULT_CONFIG,
@@ -7,6 +12,7 @@ import {
   type ClientGameView,
   type GameConfig,
   type GameLogEntry,
+  type GameMode,
   type GameState,
   type Player,
   type Role,
@@ -124,6 +130,7 @@ export function claimSeat(
     alive: true,
     hasShield: false,
     personalityId: null,
+    characterId: null,
     connected: true,
   };
   state.players = [...state.players, player];
@@ -134,15 +141,83 @@ export function claimSeat(
 export function setCastSize(state: GameState, size: number, byPlayerId: string): { ok: boolean; error?: string } {
   if (state.started) return { ok: false, error: "Game already started" };
   if (byPlayerId !== state.hostId) return { ok: false, error: "Only host can change cast size" };
-  const clamped = Math.min(16, Math.max(6, Math.floor(size)));
+  const max = state.config.gameMode === "pro" ? 10 : 16;
+  const clamped = Math.min(max, Math.max(6, Math.floor(size)));
   state.config.castSize = clamped;
   state.config.traitorCount = clamped <= 8 ? 2 : 3;
+  return { ok: true };
+}
+
+export function setGameMode(
+  state: GameState,
+  mode: GameMode,
+  byPlayerId: string,
+): { ok: boolean; error?: string } {
+  if (state.started) return { ok: false, error: "Game already started" };
+  if (byPlayerId !== state.hostId) return { ok: false, error: "Only host can change mode" };
+  if (mode !== "amateurs" && mode !== "pro") {
+    return { ok: false, error: "Invalid mode" };
+  }
+  state.config.gameMode = mode;
+  if (mode === "amateurs") {
+    for (const p of state.players) {
+      p.characterId = null;
+    }
+  } else if (state.config.castSize > 10) {
+    state.config.castSize = 10;
+    state.config.traitorCount = 3;
+  }
+  return { ok: true };
+}
+
+export function setCharacter(
+  state: GameState,
+  playerId: string,
+  characterId: string,
+): { ok: true } | { ok: false; error: string } {
+  if (state.started) return { ok: false, error: "Game already started" };
+  if (state.config.gameMode !== "pro") {
+    return { ok: false, error: "Characters are Pro mode only" };
+  }
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player || player.kind !== "human") return { ok: false, error: "Not seated" };
+  const character = getCharacter(characterId);
+  if (!character) return { ok: false, error: "Unknown character" };
+  const taken = state.players.find(
+    (p) => p.id !== playerId && p.characterId === characterId,
+  );
+  if (taken) return { ok: false, error: "Character already taken" };
+  player.characterId = characterId;
   return { ok: true };
 }
 
 function fillAiSeats(state: GameState): void {
   const need = state.config.castSize - state.players.length;
   if (need <= 0) return;
+
+  if (state.config.gameMode === "pro") {
+    const usedChars = new Set(
+      state.players.map((p) => p.characterId).filter(Boolean) as string[],
+    );
+    const available = shuffle([...CHARACTER_IDS]).filter((id) => !usedChars.has(id));
+    for (let i = 0; i < need; i++) {
+      const characterId = available[i] ?? null;
+      const character = getCharacter(characterId);
+      state.players.push({
+        id: `ai_${nanoid(8)}`,
+        name: character?.label ?? `Agent${i + 1}`,
+        kind: "ai",
+        role: null,
+        alive: true,
+        hasShield: false,
+        personalityId: null,
+        characterId,
+        connected: true,
+      });
+    }
+    return;
+  }
+
   const used = new Set(state.players.map((p) => p.name.toLowerCase()));
   const names = shuffle(AI_NAMES).filter((n) => !used.has(n.toLowerCase()));
   const personalities = shuffle([
@@ -165,6 +240,7 @@ function fillAiSeats(state: GameState): void {
       alive: true,
       hasShield: false,
       personalityId: personalities[i % personalities.length]!,
+      characterId: null,
       connected: true,
     });
   }
@@ -205,13 +281,26 @@ export function startGame(
   const humans = state.players.filter((p) => p.kind === "human");
   if (humans.length < 1) return { ok: false, error: "Need at least one human" };
 
+  if (state.config.gameMode === "pro") {
+    const missing = humans.filter((p) => !p.characterId);
+    if (missing.length) {
+      return { ok: false, error: "Everyone must pick a character in Pro mode" };
+    }
+  }
+
   fillAiSeats(state);
   assignRoles(state);
   state.started = true;
   state.day = 1;
   state.castleChat = [];
   state.conclaveChat = [];
-  log(state, "The game begins. Traitors have been chosen in secret.", true);
+  log(
+    state,
+    state.config.gameMode === "pro"
+      ? "Pro game begins. The cast is in character."
+      : "The game begins. Traitors have been chosen in secret.",
+    true,
+  );
 
   // First night murder before day 1 breakfast — classic show flow
   // For simplicity P0: start at morning of day 1 with no murder yet, then discussion
@@ -250,7 +339,7 @@ export function addChat(
     id: nanoid(10),
     channel,
     playerId: player.id,
-    playerName: player.name,
+    playerName: tableName(player),
     text: trimmed,
     at: Date.now(),
   };
@@ -660,6 +749,7 @@ export function toClientView(state: GameState, viewerId: string | null): ClientG
           isTraitor: you.role === "traitor",
         }
       : null,
+    yourCharacterId: you?.characterId ?? null,
     players: state.players.map((p) => {
       let revealedRole: Role | null = null;
       if (gameOver) revealedRole = p.role;
@@ -667,13 +757,19 @@ export function toClientView(state: GameState, viewerId: string | null): ClientG
       if (isTraitor && p.role === "traitor") revealedRole = "traitor";
       if (you && p.id === you.id) revealedRole = you.role;
 
+      const character = getCharacter(p.characterId);
       return {
         id: p.id,
-        name: p.name,
+        /** Join name (Amateurs) or AI name; Pro seats also expose characterLabel */
+        name: state.config.gameMode === "pro" && character ? character.label : p.name,
         kind: p.kind,
         alive: p.alive,
         hasShield: you?.id === p.id ? p.hasShield : false,
         connected: p.connected,
+        characterId: p.characterId,
+        characterLabel: character?.label ?? null,
+        characterInitials: character?.initials ?? null,
+        characterHue: character?.hue ?? null,
         revealedRole,
       };
     }),
