@@ -26,6 +26,19 @@ body {
   font-family: var(--font-body), system-ui, sans-serif;
 }
 
+/* Installed / home-screen web app — larger type for phone reading */
+@media (display-mode: standalone),
+  (display-mode: fullscreen),
+  (display-mode: minimal-ui) {
+  html {
+    font-size: 112.5%; /* 18px if browser default is 16px */
+  }
+}
+
+html.web-app {
+  font-size: 112.5%;
+}
+
 @keyframes ember-pulse {
   0%,
   100% {

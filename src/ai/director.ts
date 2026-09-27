@@ -30,39 +30,76 @@ function voiceStats(player: Player) {
 }
 
 /** Numbered Castle lines the model may cite as evidence */
-function castleTranscript(messages: ChatMessage[], limit = 24): {
+function castleTranscript(
+  state: GameState,
+  messages: ChatMessage[],
+  limit = 24,
+): {
   block: string;
   speakers: string[];
   empty: boolean;
 } {
   const slice = messages.slice(-limit);
   if (!slice.length) return { block: "(no Castle messages yet)", speakers: [], empty: true };
-  const speakers = [...new Set(slice.map((m) => m.playerName))];
+
+  const byId = new Map(state.players.map((p) => [p.id, p]));
+  const livingNames = new Set(living(state).map((p) => tableName(p)));
+  const speakers = [
+    ...new Set(
+      slice
+        .map((m) => m.playerName)
+        .filter((name) => livingNames.has(name)),
+    ),
+  ];
+
   const block = slice
-    .map((m, i) => `#${i + 1} ${m.playerName}: ${m.text}`)
+    .map((m, i) => {
+      const author = byId.get(m.playerId);
+      const gone = author ? !author.alive : !livingNames.has(m.playerName);
+      const tag = gone ? " [GONE — eliminated]" : "";
+      return `#${i + 1} ${m.playerName}${tag}: ${m.text}`;
+    })
     .join("\n");
   return { block, speakers, empty: false };
+}
+
+/** Fresh each AI turn — who is still in play vs gone */
+function eliminationRoster(state: GameState): string {
+  const alive = living(state);
+  const dead = state.players.filter((p) => !p.alive);
+  const lines: string[] = [
+    `STILL AT THE TABLE (${alive.length}): ${
+      alive.map((p) => tableName(p)).join(", ") || "none"
+    }`,
+  ];
+
+  if (!dead.length) {
+    lines.push("ELIMINATED: none yet");
+  } else {
+    lines.push(
+      "ELIMINATED (GONE from the game — do NOT address, vote, recruit, or ask them questions):",
+    );
+    for (const p of dead) {
+      if (state.banishedIds.includes(p.id)) {
+        lines.push(
+          `- ${tableName(p)} — BANISHED (revealed ${p.role === "traitor" ? "Traitor" : "Faithful"})`,
+        );
+      } else {
+        lines.push(`- ${tableName(p)} — MURDERED (not at breakfast; role unknown)`);
+      }
+    }
+  }
+
+  lines.push(
+    "This roster is current for THIS turn. Ignore any older chat that treats eliminated players as present.",
+  );
+  return lines.join("\n");
 }
 
 function publicEventMemory(state: GameState): string {
   const lines: string[] = [];
   lines.push(`Day ${state.day} | Phase: ${state.phase}`);
-  lines.push(
-    `Alive (${living(state).length}): ${living(state)
-      .map((p) => tableName(p))
-      .join(", ")}`,
-  );
-  if (state.banishedIds.length) {
-    const banished = state.banishedIds
-      .map((id) => {
-        const pl = state.players.find((x) => x.id === id);
-        return pl ? `${tableName(pl)}=${pl.role}` : null;
-      })
-      .filter(Boolean);
-    lines.push(`Banished (role revealed): ${banished.join(", ")}`);
-  } else {
-    lines.push("Banished: none yet");
-  }
+  lines.push(eliminationRoster(state));
   lines.push(`Morning note: ${state.morningMessage ?? "none"}`);
   if (state.lastMurderBlocked) {
     const shielded = state.players.find((p) => p.id === state.lastMurderedId);
@@ -71,9 +108,10 @@ function publicEventMemory(state: GameState): string {
     );
   } else if (state.lastMurderedId && state.phase !== "night") {
     const victim = state.players.find((p) => p.id === state.lastMurderedId);
-    if (victim) lines.push(`Public: ${tableName(victim)} was murdered (morning reveal).`);
+    if (victim && !victim.alive) {
+      lines.push(`Most recent murder: ${tableName(victim)} is gone.`);
+    }
   }
-  // Public log — factual host/engine lines only
   const publicLog = state.log
     .filter((l) => l.public)
     .slice(-12)
@@ -112,7 +150,7 @@ function heuristicDecision(
 ): AiDecision {
   const others = living(state).filter((p) => p.id !== player.id);
   const p = voiceStats(player);
-  const { speakers, empty: castleQuiet } = castleTranscript(state.castleChat);
+  const { speakers, empty: castleQuiet } = castleTranscript(state, state.castleChat);
 
   if (opts.preferConclave && player.role === "traitor") {
     const faithful = others.filter((x) => x.role === "faithful");
@@ -266,7 +304,7 @@ function buildPrompt(
   player: Player,
   opts: { preferConclave?: boolean } = {},
 ): string {
-  const castle = castleTranscript(state.castleChat, 24);
+  const castle = castleTranscript(state, state.castleChat, 24);
   const recentConclave =
     player.role === "traitor"
       ? state.conclaveChat
@@ -318,14 +356,14 @@ ${shieldSelf}
 ${player.role === "traitor" ? `PRIVATE (Traitors only): Fellow Traitors = ${fellowTraitors}` : "PRIVATE: you do not know who the Traitors are."}
 
 === UNKNOWN (never claim these as fact) ===
-- Who murdered whom beyond the morning note
+- Murderer identities beyond public reveals
 - Other players' Shields
 - Secret deals, private chats, missions, clues, letters, overheard night sounds
 - Votes not listed above
 - Anything not in Castle transcript or public state
 
 === CASTLE TRANSCRIPT (public memory — your evidence base) ===
-Speakers so far: ${castle.speakers.join(", ") || "none"}
+Living speakers only (for who can still answer): ${castle.speakers.join(", ") || "none"}
 ${castle.block}
 
 === CONCLAVE ===
@@ -341,7 +379,7 @@ Reply with ONLY compact JSON (no markdown):
 {"type":"night","mode":"murder"|"recruit","targetId":"<id>"}
 {"type":"noop"}
 
-Living player ids: ${living(state)
+Living player ids (ONLY valid vote/night/chat targets): ${living(state)
     .map((p) => `${tableName(p)}=${p.id}`)
     .join(", ")}
 
@@ -350,12 +388,52 @@ Rules:
 - Traitors: Conclave to plan; Castle performs as Faithful — never leak Conclave.
 - Chat under 160 characters. No emoji.
 - During discussion prefer chat or noop (not vote).
-- During voting/finale_vote you MUST vote if alive.
+- During voting/finale_vote you MUST vote if alive — target MUST be a living id above.
+- Never speak to or vote for anyone marked ELIMINATED / [GONE].
 - Stay in voice.`;
 }
 
 function chatLooksHallucinated(text: string): boolean {
   return FORBIDDEN_CHAT.test(text);
+}
+
+function chatAddressesGone(state: GameState, text: string): boolean {
+  const dead = state.players.filter((p) => !p.alive);
+  const lower = text.toLowerCase();
+  return dead.some((p) => {
+    const label = tableName(p).toLowerCase();
+    if (label.length < 3) return false;
+    // Direct address patterns — "Name," / "Name —" / "Name?"
+    return (
+      lower.includes(`${label},`) ||
+      lower.includes(`${label} —`) ||
+      lower.includes(`${label} -`) ||
+      lower.includes(`${label}?`) ||
+      lower.startsWith(`${label} `)
+    );
+  });
+}
+
+function sanitizeDecision(
+  state: GameState,
+  player: Player,
+  decision: AiDecision,
+  opts: { preferConclave?: boolean },
+): AiDecision {
+  const aliveIds = new Set(living(state).map((p) => p.id));
+  if (!player.alive) return { type: "noop" };
+
+  if (decision.type === "vote" || decision.type === "night") {
+    if (!aliveIds.has(decision.targetId) || decision.targetId === player.id) {
+      return heuristicDecision(state, player, opts);
+    }
+  }
+  if (decision.type === "chat") {
+    if (chatLooksHallucinated(decision.text) || chatAddressesGone(state, decision.text)) {
+      return heuristicDecision(state, player, opts);
+    }
+  }
+  return decision;
 }
 
 export async function decideForAi(
@@ -364,6 +442,7 @@ export async function decideForAi(
   apiKey?: string,
   opts: { preferConclave?: boolean } = {},
 ): Promise<AiDecision> {
+  if (!player.alive) return { type: "noop" };
   const key = apiKey || process.env.OPENAI_API_KEY;
   if (!key) return heuristicDecision(state, player, opts);
 
@@ -377,7 +456,7 @@ export async function decideForAi(
         {
           role: "system",
           content:
-            "Social-deduction contestant. Your memory is ONLY the state block and numbered Castle/Conclave lines in the user message. Persuade by citing those. Never invent events, quotes, or evidence. Prefer questions if the transcript is thin. Output one JSON object only.",
+            "Social-deduction contestant. Each turn, re-read the STILL AT THE TABLE / ELIMINATED roster — it is authoritative. Only living players can be addressed, voted, or night-targeted. Cite numbered Castle lines for persuasion. Never invent events. Output one JSON object only.",
         },
         { role: "user", content: buildPrompt(state, player, opts) },
       ],
@@ -395,10 +474,7 @@ export async function decideForAi(
         return heuristicDecision(state, player, opts);
       }
     }
-    if (parsed.type === "chat" && chatLooksHallucinated(parsed.text)) {
-      return heuristicDecision(state, player, opts);
-    }
-    return parsed;
+    return sanitizeDecision(state, player, parsed, opts);
   } catch {
     return heuristicDecision(state, player, opts);
   }

@@ -2,10 +2,19 @@
 
 import { GameBoard } from "@/components/GameBoard";
 import { Lobby } from "@/components/Lobby";
+import { TvDisplay } from "@/components/TvDisplay";
 import { useGameRoom } from "@/lib/useGameRoom";
 
-export function RoomClient({ code }: { code: string }) {
-  const { view, error, connected, playerId, send } = useGameRoom(code);
+export function RoomClient({
+  code,
+  display = false,
+}: {
+  code: string;
+  display?: boolean;
+}) {
+  const { view, error, connected, playerId, send } = useGameRoom(code, {
+    display,
+  });
 
   if (!view || !playerId) {
     return (
@@ -13,6 +22,10 @@ export function RoomClient({ code }: { code: string }) {
         Connecting to the castle…
       </div>
     );
+  }
+
+  if (display) {
+    return <TvDisplay view={view} connected={connected} />;
   }
 
   if (!view.started) {

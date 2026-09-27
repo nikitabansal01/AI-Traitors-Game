@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Outfit } from "next/font/google";
+import { WebAppFontBoost } from "@/components/WebAppFontBoost";
 import "./globals.css";
 
 const display = Fraunces({
@@ -17,12 +18,30 @@ const body = Outfit({
 export const metadata: Metadata = {
   title: "AI Traitors",
   description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
+  appleWebApp: {
+    capable: true,
+    title: "AI Traitors",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0c0a09",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <WebAppFontBoost />
+        {children}
+      </body>
     </html>
   );
 }

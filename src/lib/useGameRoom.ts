@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PartySocket from "partysocket";
 import type { ClientAction, ClientGameView } from "@/game/types";
-import { getOrCreatePlayerId, partyHost } from "@/lib/player";
+import { getDisplayViewerId, getOrCreatePlayerId, partyHost } from "@/lib/player";
 
-export function useGameRoom(roomCode: string) {
+export function useGameRoom(roomCode: string, opts: { display?: boolean } = {}) {
+  const display = Boolean(opts.display);
   const [view, setView] = useState<ClientGameView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -13,7 +14,9 @@ export function useGameRoom(roomCode: string) {
   const socketRef = useRef<PartySocket | null>(null);
 
   useEffect(() => {
-    const id = getOrCreatePlayerId();
+    const id = display
+      ? getDisplayViewerId(roomCode)
+      : getOrCreatePlayerId();
     setPlayerId(id);
 
     const socket = new PartySocket({
@@ -43,12 +46,12 @@ export function useGameRoom(roomCode: string) {
       socket.close();
       socketRef.current = null;
     };
-  }, [roomCode]);
+  }, [roomCode, display]);
 
   const send = useCallback((action: ClientAction) => {
     setError(null);
     socketRef.current?.send(JSON.stringify(action));
   }, []);
 
-  return { view, error, connected, playerId, send };
+  return { view, error, connected, playerId, send, display };
 }

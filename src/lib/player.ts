@@ -12,6 +12,11 @@ export function getOrCreatePlayerId(): string {
   return id;
 }
 
+/** Spectator / TV — never claim a seat; separate from the human player id */
+export function getDisplayViewerId(roomCode: string): string {
+  return `display_${roomCode.toUpperCase()}`;
+}
+
 export function randomRoomCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";

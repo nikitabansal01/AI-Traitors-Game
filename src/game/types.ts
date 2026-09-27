@@ -121,6 +121,8 @@ export interface GameState {
   lastBanishedId: string | null;
   /** Players who were banished (roles are public) */
   banishedIds: string[];
+  /** Players murdered at night (dead; role usually hidden) */
+  murderedIds: string[];
   lastMurderedId: string | null;
   lastMurderBlocked: boolean;
   shieldHolderId: string | null;

@@ -19,6 +19,7 @@ export function Lobby({
   connected: boolean;
 }) {
   const [name, setName] = useState("");
+  const [copied, setCopied] = useState<"code" | "link" | "tv" | null>(null);
   const seated = view.players.some((p) => p.id === playerId);
   const isHost = view.hostId === playerId;
   const humans = view.players.filter((p) => p.kind === "human");
@@ -46,10 +47,25 @@ export function Lobby({
     send({ type: "set_game_mode", mode });
   }
 
+  function copy(kind: "code" | "link" | "tv") {
+    if (typeof window === "undefined") return;
+    const origin = window.location.origin;
+    const text =
+      kind === "code"
+        ? view.roomCode
+        : kind === "tv"
+          ? `${origin}/room/${view.roomCode}/tv`
+          : `${origin}/room/${view.roomCode}`;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  }
+
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
       <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
-        Room {view.roomCode} · {connected ? "Connected" : "Connecting…"}
+        {connected ? "Connected" : "Connecting…"}
       </p>
       <h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl text-[var(--ink)]">
         The Lobby
@@ -59,6 +75,41 @@ export function Lobby({
           ? "Pro: pick a character. AI fills remaining faces."
           : "Amateurs: humans take seats. AI fills the rest."}
       </p>
+
+      <div className="mt-6 border border-[var(--line)] bg-[var(--panel)] p-4">
+        <p className="text-[10px] uppercase tracking-[0.25em] text-[var(--muted)]">
+          Room code
+        </p>
+        <p className="mt-1 font-[family-name:var(--font-display)] text-3xl tracking-[0.2em] text-[var(--ember)]">
+          {view.roomCode}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => copy("code")}
+            className="px-3 py-1.5 text-xs ring-1 ring-[var(--line)] text-[var(--ink)] hover:ring-[var(--ember)]"
+          >
+            {copied === "code" ? "Copied" : "Copy code"}
+          </button>
+          <button
+            type="button"
+            onClick={() => copy("link")}
+            className="px-3 py-1.5 text-xs ring-1 ring-[var(--line)] text-[var(--ink)] hover:ring-[var(--ember)]"
+          >
+            {copied === "link" ? "Copied" : "Copy join link"}
+          </button>
+          <button
+            type="button"
+            onClick={() => copy("tv")}
+            className="px-3 py-1.5 text-xs ring-1 ring-[var(--line)] text-[var(--ink)] hover:ring-[var(--ember)]"
+          >
+            {copied === "tv" ? "Copied" : "Copy TV display link"}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Friends join with the code. Cast the TV link on the shared screen.
+        </p>
+      </div>
 
       {isHost && seated && (
         <div className="mt-6 grid grid-cols-2 gap-2">

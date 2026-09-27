@@ -48,6 +48,7 @@ export function createLobby(roomCode: string, config: Partial<GameConfig> = {}):
     lastBanishedRole: null,
     lastBanishedId: null,
     banishedIds: [],
+    murderedIds: [],
     lastMurderedId: null,
     lastMurderBlocked: false,
     shieldHolderId: null,
@@ -107,6 +108,9 @@ export function claimSeat(
   name: string,
 ): { ok: true } | { ok: false; error: string } {
   if (state.started) return { ok: false, error: "Game already started" };
+  if (playerId.startsWith("display_")) {
+    return { ok: false, error: "Display screens cannot take a seat" };
+  }
   const trimmed = name.trim().slice(0, 20);
   if (!trimmed) return { ok: false, error: "Name required" };
 
@@ -539,6 +543,9 @@ function resolveNight(state: GameState): boolean {
     } else {
       target.alive = false;
       state.lastMurderedId = target.id;
+      if (!state.murderedIds.includes(target.id)) {
+        state.murderedIds = [...state.murderedIds, target.id];
+      }
       log(state, `${target.name} was murdered.`, true);
     }
     state.recruitEligible = false;

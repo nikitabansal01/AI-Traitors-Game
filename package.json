@@ -10,7 +10,8 @@
     "dev:next": "next dev",
     "dev:party": "partykit dev",
     "test:engine": "tsx src/game/engine.test.ts",
-    "smoke": "node scripts/smoke-room.mjs"
+    "smoke": "node scripts/smoke-room.mjs",
+    "test:join": "node scripts/confirm-join.mjs"
   },
   "dependencies": {
     "concurrently": "^10.0.5",
