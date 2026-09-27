@@ -34,8 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
-# partykit local state
+# partykit / wrangler local state
 .partykit/
+.wrangler/
+.dev.vars
 
 # vercel
 .vercel

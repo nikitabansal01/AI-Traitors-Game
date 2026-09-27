@@ -1,4 +1,6 @@
-export type Role = "faithful" | "traitor";
+export type Role = "faithful" | "traitor" | "angel";
+/** Winning side — Angel wins with the Faithfuls */
+export type WinnerSide = "faithful" | "traitor";
 export type PlayerKind = "human" | "ai";
 export type ChatChannel = "castle" | "conclave";
 /** Amateurs = MVP v0. Pro = character roleplay. */
@@ -125,7 +127,10 @@ export interface GameState {
   murderedIds: string[];
   lastMurderedId: string | null;
   lastMurderBlocked: boolean;
+  /** Living player currently holding tonight's Angel Shield (if any) */
   shieldHolderId: string | null;
+  /** Angel's chosen shield target for this night */
+  angelShieldTargetId: string | null;
   /** Morning announcement text */
   morningMessage: string | null;
   castleChat: ChatMessage[];
@@ -134,7 +139,7 @@ export interface GameState {
   phaseEndsAt: number | null;
   /** finale: End Game vs Banish Again */
   finaleChoices: Record<string, "end" | "banish">;
-  winners: Role | null;
+  winners: WinnerSide | null;
   winnerIds: string[];
   started: boolean;
   /** Latest host narrator beat (public) */
@@ -154,6 +159,7 @@ export interface ClientGameView {
     alive: boolean;
     hasShield: boolean;
     isTraitor: boolean;
+    isAngel: boolean;
   } | null;
   players: Array<{
     id: string;
@@ -175,6 +181,8 @@ export interface ClientGameView {
   yourVote: string | null;
   nightTargetId: string | null;
   nightMode: NightMode;
+  /** Angel only — who they are shielding tonight */
+  angelShieldTargetId: string | null;
   recruitEligible: boolean;
   lastBanishedRole: Role | null;
   lastBanishedId: string | null;
@@ -187,7 +195,7 @@ export interface ClientGameView {
   phaseEndsAt: number | null;
   finaleChoices: Record<string, "end" | "banish">;
   yourFinaleChoice: "end" | "banish" | null;
-  winners: Role | null;
+  winners: WinnerSide | null;
   winnerIds: string[];
   started: boolean;
   livingCount: number;
@@ -205,6 +213,7 @@ export type ClientAction =
   | { type: "vote"; targetId: string }
   | { type: "night_mode"; mode: "murder" | "recruit" }
   | { type: "night_target"; targetId: string }
+  | { type: "angel_shield"; targetId: string }
   | { type: "confirm_night" }
   | { type: "finale_choice"; choice: "end" | "banish" }
   | { type: "advance_phase" };

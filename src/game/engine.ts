@@ -16,6 +16,7 @@ import {
   type GameState,
   type Player,
   type Role,
+  type WinnerSide,
 } from "./types";
 
 const AI_NAMES = [
@@ -52,6 +53,7 @@ export function createLobby(roomCode: string, config: Partial<GameConfig> = {}):
     lastMurderedId: null,
     lastMurderBlocked: false,
     shieldHolderId: null,
+    angelShieldTargetId: null,
     morningMessage: null,
     castleChat: [],
     conclaveChat: [],
@@ -83,8 +85,31 @@ function livingTraitors(state: GameState): Player[] {
   return living(state).filter((p) => p.role === "traitor");
 }
 
-function livingFaithful(state: GameState): Player[] {
-  return living(state).filter((p) => p.role === "faithful");
+function livingAngel(state: GameState): Player | undefined {
+  return living(state).find((p) => p.role === "angel");
+}
+
+/** Faithfuls + Angel — win together against Traitors */
+function livingGood(state: GameState): Player[] {
+  return living(state).filter((p) => p.role === "faithful" || p.role === "angel");
+}
+
+function livingNonTraitors(state: GameState): Player[] {
+  return living(state).filter((p) => p.role !== "traitor");
+}
+
+function roleLabel(role: Role | null): string {
+  if (role === "traitor") return "Traitor";
+  if (role === "angel") return "Angel";
+  return "Faithful";
+}
+
+function clearShields(state: GameState): void {
+  for (const p of state.players) {
+    if (p.hasShield) p.hasShield = false;
+  }
+  state.shieldHolderId = null;
+  state.angelShieldTargetId = null;
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -185,6 +210,11 @@ export function setCharacter(
   }
   const player = state.players.find((p) => p.id === playerId);
   if (!player || player.kind !== "human") return { ok: false, error: "Not seated" };
+  // Empty / clear → play under join name (character optional in Pro)
+  if (!characterId) {
+    player.characterId = null;
+    return { ok: true };
+  }
   const character = getCharacter(characterId);
   if (!character) return { ok: false, error: "Unknown character" };
   const taken = state.players.find(
@@ -252,28 +282,15 @@ function fillAiSeats(state: GameState): void {
 
 function assignRoles(state: GameState): void {
   const ids = shuffle(state.players.map((p) => p.id));
-  const traitorIds = new Set(ids.slice(0, state.config.traitorCount));
-  state.players = state.players.map((p) => ({
-    ...p,
-    role: traitorIds.has(p.id) ? "traitor" : "faithful",
-  }));
-}
-
-function grantMorningShield(state: GameState): void {
-  // Clear previous unused shield
-  for (const p of state.players) {
-    if (p.hasShield) p.hasShield = false;
-  }
-  state.shieldHolderId = null;
-
-  const candidates = livingFaithful(state);
-  if (candidates.length === 0) return;
-  // ~40% chance a shield appears each morning for P0 drama
-  if (Math.random() > 0.4) return;
-  const holder = candidates[Math.floor(Math.random() * candidates.length)]!;
-  holder.hasShield = true;
-  state.shieldHolderId = holder.id;
-  log(state, `${holder.name} found a Shield.`, true);
+  const traitorCount = Math.min(state.config.traitorCount, Math.max(1, ids.length - 2));
+  const traitorIds = new Set(ids.slice(0, traitorCount));
+  const angelId = ids.slice(traitorCount)[0] ?? null;
+  state.players = state.players.map((p) => {
+    let role: Role = "faithful";
+    if (traitorIds.has(p.id)) role = "traitor";
+    else if (p.id === angelId) role = "angel";
+    return { ...p, role };
+  });
 }
 
 export function startGame(
@@ -285,13 +302,6 @@ export function startGame(
   const humans = state.players.filter((p) => p.kind === "human");
   if (humans.length < 1) return { ok: false, error: "Need at least one human" };
 
-  if (state.config.gameMode === "pro") {
-    const missing = humans.filter((p) => !p.characterId);
-    if (missing.length) {
-      return { ok: false, error: "Everyone must pick a character in Pro mode" };
-    }
-  }
-
   fillAiSeats(state);
   assignRoles(state);
   state.started = true;
@@ -301,15 +311,13 @@ export function startGame(
   log(
     state,
     state.config.gameMode === "pro"
-      ? "Pro game begins. The cast is in character."
-      : "The game begins. Traitors have been chosen in secret.",
+      ? "Pro game begins. Among you: Traitors, Faithfuls, and one Angel."
+      : "The game begins. Traitors, Faithfuls, and one Angel walk among you.",
     true,
   );
 
-  // First night murder before day 1 breakfast — classic show flow
-  // For simplicity P0: start at morning of day 1 with no murder yet, then discussion
+  // Day 1 Round Table first; Angel shields begin on the first night
   state.morningMessage = "Welcome to the castle. Trust no one.";
-  grantMorningShield(state);
   setPhase(state, "discussion", state.config.discussionSeconds * 1000);
   return { ok: true };
 }
@@ -400,11 +408,32 @@ export function setNightTarget(
   if (!player?.alive || player.role !== "traitor") return { ok: false, error: "Traitors only" };
   const target = state.players.find((p) => p.id === targetId);
   if (!target?.alive || target.role === "traitor") {
-    return { ok: false, error: "Must target a living Faithful" };
+    return { ok: false, error: "Must target a living Faithful or Angel" };
   }
   if (!state.nightMode) state.nightMode = state.recruitEligible ? null : "murder";
   if (!state.nightMode) return { ok: false, error: "Choose murder or recruit first" };
   state.nightTargetId = targetId;
+  return { ok: true };
+}
+
+/** US Angel: guess who Traitors will murder; that player gets tonight's Shield (self allowed). */
+export function setAngelShield(
+  state: GameState,
+  playerId: string,
+  targetId: string,
+): { ok: true } | { ok: false; error: string } {
+  if (state.phase !== "night") return { ok: false, error: "Not night" };
+  const angel = state.players.find((p) => p.id === playerId);
+  if (!angel?.alive || angel.role !== "angel") {
+    return { ok: false, error: "Angel only" };
+  }
+  const target = state.players.find((p) => p.id === targetId);
+  if (!target?.alive) return { ok: false, error: "Invalid target" };
+
+  clearShields(state);
+  target.hasShield = true;
+  state.shieldHolderId = target.id;
+  state.angelShieldTargetId = target.id;
   return { ok: true };
 }
 
@@ -457,7 +486,7 @@ function resolveBanishment(state: GameState): boolean {
   }
   log(
     state,
-    `${banished.name} was banished. They were a ${banished.role === "traitor" ? "Traitor" : "Faithful"}.`,
+    `${banished.name} was banished. They were a ${roleLabel(banished.role)}.`,
     true,
   );
 
@@ -470,41 +499,41 @@ function resolveBanishment(state: GameState): boolean {
 
 function checkWinAfterElimination(state: GameState): boolean {
   const traitors = livingTraitors(state);
-  const faithful = livingFaithful(state);
+  const good = livingGood(state);
 
   if (traitors.length === 0) {
     endGame(state, "faithful");
     return true;
   }
-  if (faithful.length === 0) {
+  if (good.length === 0) {
     endGame(state, "traitor");
     return true;
   }
   if (living(state).length <= 2) {
-    // If any traitor remains among final 2, traitors win
     endGame(state, traitors.length > 0 ? "traitor" : "faithful");
     return true;
   }
   return false;
 }
 
-function endGame(state: GameState, winners: Role): void {
+function endGame(state: GameState, winners: WinnerSide): void {
   state.winners = winners;
   state.winnerIds =
     winners === "traitor"
       ? livingTraitors(state).map((p) => p.id)
-      : livingFaithful(state).map((p) => p.id);
+      : livingGood(state).map((p) => p.id);
   setPhase(state, "ended");
   log(
     state,
     winners === "traitor"
       ? `The Traitors steal the prize of $${state.config.prizePot.toLocaleString()}.`
-      : `The Faithful share the prize of $${state.config.prizePot.toLocaleString()}.`,
+      : `The Faithful (and Angel) share the prize of $${state.config.prizePot.toLocaleString()}.`,
     true,
   );
 }
 
 function resolveNight(state: GameState): boolean {
+  ensureAiAngelShield(state, { force: true });
   const mode = state.nightMode ?? "murder";
   const targetId = state.nightTargetId;
 
@@ -516,6 +545,7 @@ function resolveNight(state: GameState): boolean {
     state.recruitEligible = false;
     state.nightMode = null;
     state.nightTargetId = null;
+    clearShields(state);
     return false;
   }
 
@@ -523,14 +553,25 @@ function resolveNight(state: GameState): boolean {
   if (!target?.alive) {
     state.nightMode = null;
     state.nightTargetId = null;
+    clearShields(state);
     return false;
   }
 
   if (mode === "recruit") {
-    if (target.role === "faithful") {
+    if (target.role === "faithful" || target.role === "angel") {
+      const wasAngel = target.role === "angel";
       target.role = "traitor";
+      target.hasShield = false;
+      if (state.shieldHolderId === target.id) state.shieldHolderId = null;
+      if (state.angelShieldTargetId === target.id) state.angelShieldTargetId = null;
       log(state, `${target.name} was recruited into the Traitors.`, false);
-      log(state, "A Faithful has been turned. Trust less.", true);
+      log(
+        state,
+        wasAngel
+          ? "Someone has been turned — and the Angel is gone."
+          : "A Faithful has been turned. Trust less.",
+        true,
+      );
     }
     state.recruitEligible = false;
   } else {
@@ -542,6 +583,7 @@ function resolveNight(state: GameState): boolean {
       log(state, `${target.name}'s Shield blocked the murder!`, true);
     } else {
       target.alive = false;
+      target.hasShield = false;
       state.lastMurderedId = target.id;
       if (!state.murderedIds.includes(target.id)) {
         state.murderedIds = [...state.murderedIds, target.id];
@@ -553,6 +595,8 @@ function resolveNight(state: GameState): boolean {
 
   state.nightMode = null;
   state.nightTargetId = null;
+  // Spent or unused — clear for next night
+  clearShields(state);
   return checkWinAfterElimination(state);
 }
 
@@ -594,6 +638,7 @@ function enterFinaleOrNight(state: GameState): void {
     log(state, "Finale: End Game or Banish Again?", true);
     return;
   }
+  clearShields(state);
   state.nightMode = state.recruitEligible ? null : "murder";
   state.nightTargetId = null;
   setPhase(state, "night", state.config.nightSeconds * 1000);
@@ -612,8 +657,6 @@ function beginMorning(state: GameState): void {
   } else {
     state.morningMessage = "No one was murdered in the night.";
   }
-  grantMorningShield(state);
-  // Breakfast cinematic, then Round Table
   setPhase(state, "morning", 4500);
 }
 
@@ -676,14 +719,34 @@ export function advancePhase(state: GameState): boolean {
 }
 
 function autoNightIfNeeded(state: GameState): void {
+  ensureAiAngelShield(state, { force: true });
   if (state.nightTargetId) return;
-  const faithful = livingFaithful(state);
-  if (faithful.length === 0) return;
+  const pool = livingNonTraitors(state);
+  if (pool.length === 0) return;
   if (!state.nightMode) {
     state.nightMode = state.recruitEligible && Math.random() < 0.5 ? "recruit" : "murder";
   }
-  const pick = faithful[Math.floor(Math.random() * faithful.length)]!;
+  const pick = pool[Math.floor(Math.random() * pool.length)]!;
   state.nightTargetId = pick.id;
+}
+
+/** AI Angel picks during night; `force` also fills for a human who ran out of time. */
+export function ensureAiAngelShield(
+  state: GameState,
+  opts: { force?: boolean } = {},
+): void {
+  if (state.phase !== "night") return;
+  if (state.angelShieldTargetId) return;
+  const angel = livingAngel(state);
+  if (!angel) return;
+  if (!opts.force && angel.kind === "human") return;
+  const alive = living(state);
+  if (!alive.length) return;
+  const target =
+    Math.random() < 0.25
+      ? angel
+      : alive[Math.floor(Math.random() * alive.length)]!;
+  setAngelShield(state, angel.id, target.id);
 }
 
 /** Auto-fill AI votes if missing when voting ends — called before resolve */
@@ -731,6 +794,7 @@ export function tick(state: GameState, now = Date.now()): boolean {
     ensureAiFinaleChoices(state);
   }
   if (state.phase === "night") {
+    ensureAiAngelShield(state);
     autoNightIfNeeded(state);
   }
   return advancePhase(state);
@@ -739,6 +803,7 @@ export function tick(state: GameState, now = Date.now()): boolean {
 export function toClientView(state: GameState, viewerId: string | null): ClientGameView {
   const you = viewerId ? state.players.find((p) => p.id === viewerId) : null;
   const isTraitor = you?.role === "traitor";
+  const isAngel = you?.role === "angel";
   const gameOver = state.phase === "ended";
 
   return {
@@ -754,6 +819,7 @@ export function toClientView(state: GameState, viewerId: string | null): ClientG
           alive: you.alive,
           hasShield: you.hasShield,
           isTraitor: you.role === "traitor",
+          isAngel: you.role === "angel",
         }
       : null,
     yourCharacterId: you?.characterId ?? null,
@@ -786,6 +852,7 @@ export function toClientView(state: GameState, viewerId: string | null): ClientG
     yourVote: you ? state.votes[you.id] ?? null : null,
     nightTargetId: isTraitor ? state.nightTargetId : null,
     nightMode: isTraitor ? state.nightMode : null,
+    angelShieldTargetId: isAngel ? state.angelShieldTargetId : null,
     recruitEligible: isTraitor ? state.recruitEligible : false,
     lastBanishedRole: state.lastBanishedRole,
     lastBanishedId: state.lastBanishedId,

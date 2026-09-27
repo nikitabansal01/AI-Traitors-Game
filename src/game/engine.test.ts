@@ -33,6 +33,11 @@ function run() {
   assert(started.ok, "start Amateurs");
   assert(state.players.length === 6, `cast size ${state.players.length}`);
   assert(state.players.filter((p) => p.role === "traitor").length === 2, "2 traitors");
+  assert(state.players.filter((p) => p.role === "angel").length === 1, "1 angel");
+  assert(
+    state.players.filter((p) => p.role === "faithful").length === 3,
+    "remaining faithfuls",
+  );
   assert(state.phase === "discussion", "discussion phase");
   assert(
     state.players.filter((p) => p.kind === "ai").every((p) => p.personalityId && !p.characterId),
@@ -50,6 +55,13 @@ function run() {
   const viewF = getClientView(state, faithful.id);
   assert(viewF.conclaveChat.length === 0, "faithful no conclave");
   assert(viewF.you?.isTraitor === false, "faithful role");
+  assert(viewF.you?.isAngel === false, "faithful not angel");
+
+  const angel = state.players.find((p) => p.role === "angel")!;
+  const viewA = getClientView(state, angel.id);
+  assert(viewA.you?.isAngel === true, "angel knows role");
+  assert(viewA.you?.isTraitor === false, "angel not traitor");
+  assert(viewA.conclaveChat.length === 0, "angel no conclave");
 
   state.phaseEndsAt = Date.now() - 1;
   tick(state);
@@ -79,14 +91,15 @@ function run() {
   assert(pro.config.gameMode === "pro", "pro mode");
   assert(setCharacter(pro, "h1", "messi").ok, "Alice Messi");
   assert(!setCharacter(pro, "h2", "messi").ok, "unique characters");
-  assert(setCharacter(pro, "h2", "taylor").ok, "Bob Taylor");
+  // Bob skips character — optional in Pro
   pro.config.castSize = 6;
   pro.config.traitorCount = 2;
   const proStart = startGame(pro, "h1");
-  assert(proStart.ok, "start Pro");
+  assert(proStart.ok, "start Pro with optional characters");
+  assert(pro.players.find((p) => p.id === "h2")?.characterId == null, "Bob no character");
   assert(
-    pro.players.every((p) => p.characterId),
-    "Pro cast all have characters",
+    pro.players.filter((p) => p.kind === "ai").every((p) => p.characterId),
+    "Pro AI still get characters",
   );
   assert(
     pro.players.filter((p) => p.kind === "ai").every((p) => !p.personalityId),

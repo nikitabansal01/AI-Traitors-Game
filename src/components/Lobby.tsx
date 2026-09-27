@@ -72,7 +72,7 @@ export function Lobby({
       </h1>
       <p className="mt-2 text-[var(--muted)]">
         {isPro
-          ? "Pro: pick a character. AI fills remaining faces."
+          ? "Pro: character optional. AI fills remaining faces."
           : "Amateurs: humans take seats. AI fills the rest."}
       </p>
 
@@ -169,8 +169,19 @@ export function Lobby({
       {isPro && seated && (
         <div className="mt-8">
           <p className="mb-3 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
-            Your character
+            Character (optional)
           </p>
+          <button
+            type="button"
+            onClick={() => send({ type: "set_character", characterId: "" })}
+            className={`mb-2 w-full px-3 py-2 text-left text-sm ring-1 ${
+              !you?.characterId
+                ? "bg-[var(--ember)]/15 ring-[var(--ember)] text-[var(--ink)]"
+                : "ring-[var(--line)] text-[var(--muted)]"
+            }`}
+          >
+            Play as yourself
+          </button>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {CHARACTER_IDS.map((id) => {
               const c = CHARACTERS[id];
@@ -181,7 +192,12 @@ export function Lobby({
                   key={id}
                   type="button"
                   disabled={locked}
-                  onClick={() => send({ type: "set_character", characterId: id })}
+                  onClick={() =>
+                    send({
+                      type: "set_character",
+                      characterId: selected ? "" : id,
+                    })
+                  }
                   className={`flex items-start gap-3 px-3 py-3 text-left ring-1 transition ${
                     selected
                       ? "bg-[var(--ember)]/15 ring-[var(--ember)]"
@@ -223,7 +239,7 @@ export function Lobby({
             </span>
             <span className="shrink-0 text-xs text-[var(--muted)]">
               {p.id === view.hostId ? "Host" : "Human"}
-              {isPro && !p.characterId ? " · pick" : ""}
+              {isPro && p.characterId ? ` · ${p.characterLabel}` : ""}
             </span>
           </li>
         ))}
@@ -251,7 +267,8 @@ export function Lobby({
             />
           </label>
           <p className="text-xs text-[var(--muted)]">
-            {view.config.traitorCount} Traitors · {isPro ? "Pro roleplay" : "Amateurs MVP"}
+            {view.config.traitorCount} Traitors · 1 Angel ·{" "}
+            {isPro ? "Pro roleplay" : "Amateurs"}
           </p>
           <button
             type="button"

@@ -12,6 +12,7 @@ export type AiDecision =
   | { type: "vote"; targetId: string }
   | { type: "finale"; choice: "end" | "banish" }
   | { type: "night"; mode: "murder" | "recruit"; targetId: string }
+  | { type: "angel_shield"; targetId: string }
   | { type: "noop" };
 
 const FORBIDDEN_CHAT =
@@ -82,7 +83,9 @@ function eliminationRoster(state: GameState): string {
     for (const p of dead) {
       if (state.banishedIds.includes(p.id)) {
         lines.push(
-          `- ${tableName(p)} — BANISHED (revealed ${p.role === "traitor" ? "Traitor" : "Faithful"})`,
+          `- ${tableName(p)} — BANISHED (revealed ${
+            p.role === "traitor" ? "Traitor" : p.role === "angel" ? "Angel" : "Faithful"
+          })`,
         );
       } else {
         lines.push(`- ${tableName(p)} — MURDERED (not at breakfast; role unknown)`);
@@ -242,10 +245,21 @@ function heuristicDecision(
     return { type: "finale", choice: "banish" };
   }
 
+  if (state.phase === "night" && player.role === "angel") {
+    if (state.angelShieldTargetId) return { type: "noop" };
+    const alive = living(state);
+    if (!alive.length) return { type: "noop" };
+    const target =
+      Math.random() < 0.25
+        ? player
+        : alive[Math.floor(Math.random() * alive.length)]!;
+    return { type: "angel_shield", targetId: target.id };
+  }
+
   if (state.phase === "night" && player.role === "traitor") {
     if (!state.nightTargetId && state.conclaveChat.slice(-3).length < 2) {
-      const faithful = others.filter((x) => x.role === "faithful");
-      const pick = faithful[Math.floor(Math.random() * Math.max(faithful.length, 1))];
+      const targets = others.filter((x) => x.role !== "traitor");
+      const pick = targets[Math.floor(Math.random() * Math.max(targets.length, 1))];
       return {
         type: "chat",
         channel: "conclave",
@@ -254,10 +268,10 @@ function heuristicDecision(
           : `Who are we taking tonight?`,
       };
     }
-    const faithful = others.filter((x) => x.role === "faithful");
-    if (!faithful.length) return { type: "noop" };
-    const unshielded = faithful.filter((x) => !x.hasShield);
-    const pool = unshielded.length && Math.random() < 0.7 ? unshielded : faithful;
+    const targets = others.filter((x) => x.role !== "traitor");
+    if (!targets.length) return { type: "noop" };
+    const unshielded = targets.filter((x) => !x.hasShield);
+    const pool = unshielded.length && Math.random() < 0.7 ? unshielded : targets;
     const target = pool[Math.floor(Math.random() * pool.length)]!;
     const mode =
       state.recruitEligible && Math.random() < 0.45 ? "recruit" : "murder";
@@ -276,6 +290,11 @@ Traitor play as ${character.label}: ${character.traitorPlay}
 Never admit you are a Traitor. Never expose Conclave plans in Castle chat.
 Social bluffs OK. Invented events/quotes/missions are NOT.`;
     }
+    if (player.role === "angel") {
+      return `ANGEL goals: look like a Faithful by day; at night guess who Traitors will murder and Shield them (self allowed).
+Angel play as ${character.label}: ${character.faithfulPlay}
+Never announce you are the Angel in Castle. Win with the Faithfuls.`;
+    }
     return `FAITHFUL goals: find Traitors using public state + Castle chat.
 Faithful play as ${character.label}: ${character.faithfulPlay}
 Build doubt only from real lines or public events. Prefer questions if unsure.`;
@@ -288,6 +307,11 @@ Build doubt only from real lines or public events. Prefer questions if unsure.`;
 Traitor play for your personality: ${p.traitorPlay}
 Never admit you are a Traitor. Never expose Conclave plans in Castle chat.
 Social bluffs OK. Invented events/quotes/missions are NOT.`;
+  }
+  if (player.role === "angel") {
+    return `ANGEL goals: look like a Faithful by day; at night guess who Traitors will murder and Shield them (self allowed).
+Angel play for your personality: ${p.faithfulPlay}
+Never announce you are the Angel in Castle. Win with the Faithfuls.`;
   }
   return `FAITHFUL goals: find Traitors using public state + Castle chat.
 Faithful play for your personality: ${p.faithfulPlay}
@@ -329,10 +353,21 @@ function buildPrompt(
   const nightHint =
     state.phase === "night" && player.role === "traitor" && !opts.preferConclave
       ? `\nNight: If Conclave has not agreed yet, chat in conclave. If a name is already clear in Conclave, output a night action.`
-      : "";
+      : state.phase === "night" && player.role === "angel"
+        ? `\nNight (Angel): Guess who Traitors will murder. Output {"type":"angel_shield","targetId":"<id>"} — may be yourself. Do not chat about being the Angel.`
+        : "";
 
   const shieldSelf =
     player.hasShield ? "You personally hold a Shield (secret to others)." : "You do not hold a Shield.";
+  const angelPick = state.angelShieldTargetId
+    ? state.players.find((p) => p.id === state.angelShieldTargetId)
+    : null;
+  const angelPrivate =
+    player.role === "angel"
+      ? `PRIVATE (Angel): You alone choose tonight's Shield. Current pick: ${
+          angelPick ? tableName(angelPick) : "none yet"
+        }.`
+      : "";
 
   const persuasionGuide = castle.empty
     ? `Castle is empty. You may ONLY: ask a living player a question, note the morning note, or noop. Do not invent prior conversation.`
@@ -353,11 +388,17 @@ ${publicEventMemory(state)}
 ${voteMemory(state)}
 Recruit available tonight: ${state.recruitEligible ? "yes" : "no"}
 ${shieldSelf}
-${player.role === "traitor" ? `PRIVATE (Traitors only): Fellow Traitors = ${fellowTraitors}` : "PRIVATE: you do not know who the Traitors are."}
+${
+    player.role === "traitor"
+      ? `PRIVATE (Traitors only): Fellow Traitors = ${fellowTraitors}`
+      : player.role === "angel"
+        ? angelPrivate
+        : "PRIVATE: you do not know who the Traitors or Angel are."
+  }
 
 === UNKNOWN (never claim these as fact) ===
 - Murderer identities beyond public reveals
-- Other players' Shields
+- Other players' Shields (unless you are Angel and chose them)
 - Secret deals, private chats, missions, clues, letters, overheard night sounds
 - Votes not listed above
 - Anything not in Castle transcript or public state
@@ -377,6 +418,7 @@ Reply with ONLY compact JSON (no markdown):
 {"type":"vote","targetId":"<id>"}
 {"type":"finale","choice":"end"|"banish"}
 {"type":"night","mode":"murder"|"recruit","targetId":"<id>"}
+{"type":"angel_shield","targetId":"<id>"}
 {"type":"noop"}
 
 Living player ids (ONLY valid vote/night/chat targets): ${living(state)
@@ -384,7 +426,8 @@ Living player ids (ONLY valid vote/night/chat targets): ${living(state)
     .join(", ")}
 
 Rules:
-- Faithful never use channel conclave.
+- Faithful and Angel never use channel conclave.
+- Angel: do not admit Angel role in Castle; at night prefer angel_shield.
 - Traitors: Conclave to plan; Castle performs as Faithful — never leak Conclave.
 - Chat under 160 characters. No emoji.
 - During discussion prefer chat or noop (not vote).
@@ -425,6 +468,11 @@ function sanitizeDecision(
 
   if (decision.type === "vote" || decision.type === "night") {
     if (!aliveIds.has(decision.targetId) || decision.targetId === player.id) {
+      return heuristicDecision(state, player, opts);
+    }
+  }
+  if (decision.type === "angel_shield") {
+    if (!aliveIds.has(decision.targetId) || player.role !== "angel") {
       return heuristicDecision(state, player, opts);
     }
   }
@@ -483,7 +531,10 @@ export async function decideForAi(
 export function pickAiActors(state: GameState, limit = 2): Player[] {
   const ais = living(state).filter((p) => p.kind === "ai");
   if (state.phase === "night") {
-    return ais.filter((p) => p.role === "traitor").slice(0, Math.max(limit, 1));
+    const traitors = ais.filter((p) => p.role === "traitor");
+    const angel = ais.find((p) => p.role === "angel" && !state.angelShieldTargetId);
+    const nightActors = angel ? [angel, ...traitors] : traitors;
+    return nightActors.slice(0, Math.max(limit, angel ? 2 : 1));
   }
   if (state.phase === "voting" || state.phase === "finale_vote" || state.phase === "finale_choice") {
     return ais.filter((p) => !state.votes[p.id] && !state.finaleChoices[p.id]);

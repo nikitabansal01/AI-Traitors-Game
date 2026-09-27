@@ -29,7 +29,9 @@ function playerName(state: GameState, id: string | null): string {
 }
 
 function roleWord(role: Role | null): string {
-  return role === "traitor" ? "Traitor" : "Faithful";
+  if (role === "traitor") return "Traitor";
+  if (role === "angel") return "Angel";
+  return "Faithful";
 }
 
 /** Build the host beat for the state's current phase + recent events */
@@ -103,6 +105,7 @@ export function buildHostBeat(state: GameState): HostBeat {
         );
       }
       const traitorDown = state.lastBanishedRole === "traitor";
+      const angelDown = state.lastBanishedRole === "angel";
       return beat(
         "banish_reveal",
         `${name} is banished`,
@@ -110,7 +113,11 @@ export function buildHostBeat(state: GameState): HostBeat {
         {
           sfx: traitorDown ? "triumph" : "doom",
           cinematicMs: 5800,
-          detail: traitorDown ? "A Traitor falls." : "A Faithful falls.",
+          detail: traitorDown
+            ? "A Traitor falls."
+            : angelDown
+              ? "The Angel falls."
+              : "A Faithful falls.",
         },
       );
     }
@@ -119,7 +126,7 @@ export function buildHostBeat(state: GameState): HostBeat {
       return beat(
         "night",
         "Night falls",
-        "Faithfuls — to bed. Traitors — to the turret.",
+        "Faithfuls sleep. The Angel chooses a Shield. Traitors go to the turret.",
         { sfx: "heartbeat", cinematicMs: 4500 },
       );
 

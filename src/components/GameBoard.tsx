@@ -19,7 +19,7 @@ function phaseLabel(phase: string): string {
     case "banish_reveal":
       return "Reveal";
     case "night":
-      return "Night — Traitors";
+      return "Night";
     case "finale_choice":
       return "Finale";
     case "finale_vote":
@@ -58,8 +58,18 @@ export function GameBoard({
   const canConclave = Boolean(view.you?.isTraitor);
   const living = view.players.filter((p) => p.alive);
   const [muted, setMuted] = useMuted();
-  const nightDim = view.phase === "night" && !view.you?.isTraitor;
+  const nightActive = Boolean(
+    view.you?.alive && (view.you.isTraitor || view.you.isAngel),
+  );
+  const nightDim = view.phase === "night" && !nightActive;
   const isPro = view.config.gameMode === "pro";
+
+  function roleLabel(): string {
+    if (!view.you) return "";
+    if (view.you.isTraitor) return "Traitor";
+    if (view.you.isAngel) return "Angel";
+    return "Faithful";
+  }
 
   return (
     <div className={nightDim ? "phase-night-dim" : undefined}>
@@ -92,7 +102,7 @@ export function GameBoard({
                   <div className="mt-1">
                     You:{" "}
                     <span className="text-[var(--ink)]">
-                      {view.you.isTraitor ? "Traitor" : "Faithful"}
+                      {roleLabel()}
                       {view.you.hasShield ? " · Shield" : ""}
                       {!view.you.alive ? " · Eliminated" : ""}
                     </span>
@@ -195,6 +205,34 @@ export function GameBoard({
             </section>
           )}
 
+          {view.phase === "night" && view.you?.isAngel && view.you.alive && (
+            <section className="border border-[var(--ember)]/60 bg-[var(--panel)] p-4">
+              <h2 className="mb-1 text-xs uppercase tracking-[0.2em] text-[var(--ember)]">
+                Angel — Shield
+              </h2>
+              <p className="mb-3 text-sm text-[var(--muted)]">
+                Guess who the Traitors will murder. Give them tonight&apos;s Shield (you may choose yourself).
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {living.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => send({ type: "angel_shield", targetId: p.id })}
+                    className={`px-3 py-2 text-sm ${
+                      view.angelShieldTargetId === p.id
+                        ? "bg-[var(--ember)] text-[var(--night)]"
+                        : "bg-[var(--panel-2)] ring-1 ring-[var(--line)]"
+                    }`}
+                  >
+                    {p.name}
+                    {p.id === playerId ? " · you" : ""}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           {view.phase === "night" && view.you?.isTraitor && view.you.alive && (
             <section className="border border-[var(--blood)] bg-[var(--blood)]/20 p-4">
               <h2 className="mb-3 text-xs uppercase tracking-[0.2em] text-[var(--ember)]">
@@ -239,7 +277,10 @@ export function GameBoard({
             </section>
           )}
 
-          {view.phase === "night" && !view.you?.isTraitor && view.you?.alive && (
+          {view.phase === "night" &&
+            view.you?.alive &&
+            !view.you.isTraitor &&
+            !view.you.isAngel && (
             <div className="border border-[var(--line)] bg-black/40 p-6 text-center">
               <p className="font-[family-name:var(--font-display)] text-2xl text-[var(--muted)]">
                 The castle sleeps

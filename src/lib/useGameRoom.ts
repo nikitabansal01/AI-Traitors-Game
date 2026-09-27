@@ -21,6 +21,7 @@ export function useGameRoom(roomCode: string, opts: { display?: boolean } = {}) 
 
     const socket = new PartySocket({
       host: partyHost(),
+      party: "main",
       room: roomCode.toUpperCase(),
       query: { playerId: id },
     });

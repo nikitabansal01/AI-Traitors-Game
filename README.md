@@ -6,27 +6,31 @@ Multiplayer web game inspired by *The Traitors*. Humans join a room; AI fills em
 
 ```bash
 cp .env.example .env.local
+cp .env.example .dev.vars
 npm install
 npm run dev
 ```
 
 - Next.js: http://localhost:3000  
-- PartyKit: http://localhost:1999  
+- Realtime (Cloudflare Workers / PartyServer): http://localhost:1999  
 
-Optional: set `OPENAI_API_KEY` so AI players use GPT instead of heuristics.
+Optional: set `OPENAI_API_KEY` in `.dev.vars` so AI players use GPT instead of heuristics.
 
-1. Copy env template:
-   ```bash
-   cp .env.example .env
-   ```
-2. Put your key in `.env` (PartyKit loads this file):
-   ```
-   OPENAI_API_KEY=sk-...
-   OPENAI_MODEL=gpt-4o-mini
-   ```
-3. Restart `npm run dev` so PartyKit picks up the key.
+## Deploy realtime (multiplayer)
 
-Without a key, AI still plays via built-in heuristics.
+UI stays on Vercel. Rooms run on Cloudflare Workers (`*.workers.dev`).
+
+```bash
+npx wrangler login          # or claim a preview account from `wrangler deploy --temporary`
+npx wrangler secret put OPENAI_API_KEY
+npm run deploy:party
+```
+
+Then in Vercel → Project → Settings → Environment Variables:
+
+- `NEXT_PUBLIC_PARTYKIT_HOST` = your worker host, e.g. `ai-traitors.your-subdomain.workers.dev` (no `https://`)
+
+Redeploy the Next app after changing that env.
 
 ## Play
 
