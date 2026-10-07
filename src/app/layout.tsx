@@ -19,6 +19,22 @@ const body = Outfit({
 export const metadata: Metadata = {
   title: "AI Traitors",
   description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
+  applicationName: "AI Traitors",
+  icons: {
+    icon: [{ url: "/logo.jpg", type: "image/jpeg" }],
+    apple: [{ url: "/logo.jpg", type: "image/jpeg" }],
+  },
+  openGraph: {
+    title: "AI Traitors",
+    description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
+    images: [{ url: "/logo.jpg", width: 1024, height: 1024, alt: "Traitors" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "AI Traitors",
+    description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
+    images: ["/logo.jpg"],
+  },
   appleWebApp: {
     capable: true,
     title: "AI Traitors",

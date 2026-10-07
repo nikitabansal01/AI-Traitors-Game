@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { CharacterAvatar } from "@/components/CharacterAvatar";
 import { CinematicOverlay, HostStrip, useMuted } from "@/components/HostCinematic";
@@ -58,6 +59,14 @@ export function TvDisplay({
   if (!view.started) {
     return (
       <div className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center px-8 py-12 text-center">
+        <Image
+          src="/logo.jpg"
+          alt="Traitors"
+          width={160}
+          height={160}
+          priority
+          className="mx-auto mb-6 h-28 w-28 rounded-sm object-cover ring-1 ring-[var(--line)] md:h-36 md:w-36"
+        />
         <p className="text-sm uppercase tracking-[0.35em] text-[var(--ember)]">
           Shared display · {connected ? "Live" : "Connecting…"}
         </p>

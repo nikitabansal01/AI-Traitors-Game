@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { CHARACTERS, CHARACTER_IDS } from "@/ai/characters";
 import { CharacterAvatar } from "@/components/CharacterAvatar";
@@ -64,6 +65,13 @@ export function Lobby({
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
+      <Image
+        src="/logo.jpg"
+        alt="Traitors"
+        width={96}
+        height={96}
+        className="mb-4 h-16 w-16 rounded-sm object-cover ring-1 ring-[var(--line)]"
+      />
       <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
         {connected ? "Connected" : "Connecting…"}
       </p>
