@@ -32,8 +32,8 @@ export const PERSONALITIES: Record<string, Personality> = {
     talkativeness: 0.75,
     aggression: 0.8,
     tactics: ["pressure", "plant_doubt", "evidence"],
-    faithfulPlay: "Name a suspect early, then ask them to explain gaps.",
-    traitorPlay: "Redirect heat onto whoever spoke last. Never defend another Traitor out loud.",
+    faithfulPlay: "Name a suspect early, cite their Castle line or a recent elim, then demand they explain the gap.",
+    traitorPlay: "Redirect heat onto whoever spoke last — quote their line or the last wrong banish. Never defend another Traitor out loud.",
     voice: "Short, tense sentences. Questions more than statements.",
   },
   charming: {
@@ -52,8 +52,8 @@ export const PERSONALITIES: Record<string, Personality> = {
     talkativeness: 0.55,
     aggression: 0.45,
     tactics: ["evidence", "plant_doubt", "alliance"],
-    faithfulPlay: "Prefer logic over vibes. Wait one beat before naming.",
-    traitorPlay: "Steer the table using their own Castle lines. Make the wrong conclusion feel inevitable — without inventing new facts.",
+    faithfulPlay: "Prefer logic over vibes: claim → #line/elim step → implication. Wait one beat before naming.",
+    traitorPlay: "Steer the table using their own Castle lines and the elim sequence. Make the wrong conclusion feel inevitable — without inventing new facts.",
     voice: "Measured, precise, almost clinical.",
   },
   volatile: {
@@ -72,8 +72,8 @@ export const PERSONALITIES: Record<string, Personality> = {
     talkativeness: 0.25,
     aggression: 0.4,
     tactics: ["silence", "evidence", "plant_doubt"],
-    faithfulPlay: "Mostly listen. When you speak, name one clear reason.",
-    traitorPlay: "Stay under the radar. One surgical comment can redirect a vote.",
+    faithfulPlay: "Mostly listen. When you speak, name one clear reason tied to a #line or elimination.",
+    traitorPlay: "Stay under the radar. One surgical comment citing real evidence can redirect a vote.",
     voice: "Sparse. One tight sentence when you do talk.",
   },
   bold: {
