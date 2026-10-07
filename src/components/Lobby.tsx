@@ -67,11 +67,11 @@ export function Lobby({
     <div className="mx-auto max-w-xl px-4 py-10">
       <div className="mb-3 flex items-center gap-2.5">
         <Image
-          src="/logo.jpg"
+          src="/logo.png"
           alt=""
-          width={28}
-          height={28}
-          className="h-7 w-7 rounded-sm object-cover opacity-80 ring-1 ring-[var(--line)]"
+          width={120}
+          height={40}
+          className="h-5 w-auto opacity-90"
         />
         <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
           {connected ? "Connected" : "Connecting…"}

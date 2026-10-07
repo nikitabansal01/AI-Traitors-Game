@@ -60,12 +60,12 @@ export function TvDisplay({
     return (
       <div className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center px-8 py-12 text-center">
         <Image
-          src="/logo.jpg"
+          src="/logo.png"
           alt=""
-          width={48}
-          height={48}
+          width={280}
+          height={93}
           priority
-          className="mx-auto mb-5 h-10 w-10 rounded-sm object-cover opacity-85 ring-1 ring-[var(--line)]"
+          className="mx-auto mb-5 h-10 w-auto opacity-95"
         />
         <p className="text-sm uppercase tracking-[0.35em] text-[var(--ember)]">
           Shared display · {connected ? "Live" : "Connecting…"}

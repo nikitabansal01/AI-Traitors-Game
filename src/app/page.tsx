@@ -31,26 +31,21 @@ export default function HomePage() {
         }}
       />
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center px-6 py-16 text-center">
+      <div className="relative mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
         <p className="text-xs uppercase tracking-[0.35em] text-[var(--ember)]">
           Multiplayer deception
         </p>
-
-        {/* Crop the square logo to a wide wordmark band, matching the cinematic mock */}
-        <h1 className="relative mt-3 w-full max-w-[36rem]">
-          <span className="relative mx-auto block aspect-[2.6/1] w-full overflow-hidden">
-            <Image
-              src="/logo.jpg"
-              alt="AI Traitors"
-              fill
-              priority
-              sizes="(max-width: 768px) 90vw, 576px"
-              className="object-cover object-center"
-            />
-          </span>
+        <h1 className="mt-4">
+          <Image
+            src="/logo.png"
+            alt="AI Traitors"
+            width={1024}
+            height={341}
+            priority
+            className="h-auto w-[min(88vw,420px)]"
+          />
         </h1>
-
-        <p className="mt-5 max-w-lg text-base leading-relaxed text-[var(--muted)] sm:text-lg">
+        <p className="mt-6 max-w-md text-lg text-[var(--muted)]">
           Join the cast. AI fills empty seats. Faithfuls hunt. Traitors murder.
           Someone at this table is lying.
         </p>
@@ -59,7 +54,7 @@ export default function HomePage() {
           <span className="text-[var(--ink)]">Pro</span> — play as famous characters.
         </p>
 
-        <div className="mt-12 flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-stretch">
+        <div className="mt-12 flex flex-col gap-4 sm:flex-row sm:items-stretch">
           <button
             type="button"
             onClick={createRoom}
