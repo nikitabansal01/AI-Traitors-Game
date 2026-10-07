@@ -65,16 +65,18 @@ export function Lobby({
 
   return (
     <div className="mx-auto max-w-xl px-4 py-10">
-      <Image
-        src="/logo.jpg"
-        alt="Traitors"
-        width={96}
-        height={96}
-        className="mb-4 h-16 w-16 rounded-sm object-cover ring-1 ring-[var(--line)]"
-      />
-      <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
-        {connected ? "Connected" : "Connecting…"}
-      </p>
+      <div className="mb-3 flex items-center gap-2.5">
+        <Image
+          src="/logo.jpg"
+          alt=""
+          width={28}
+          height={28}
+          className="h-7 w-7 rounded-sm object-cover opacity-80 ring-1 ring-[var(--line)]"
+        />
+        <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">
+          {connected ? "Connected" : "Connecting…"}
+        </p>
+      </div>
       <h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl text-[var(--ink)]">
         The Lobby
       </h1>

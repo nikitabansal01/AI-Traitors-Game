@@ -61,11 +61,11 @@ export function TvDisplay({
       <div className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center px-8 py-12 text-center">
         <Image
           src="/logo.jpg"
-          alt="Traitors"
-          width={160}
-          height={160}
+          alt=""
+          width={48}
+          height={48}
           priority
-          className="mx-auto mb-6 h-28 w-28 rounded-sm object-cover ring-1 ring-[var(--line)] md:h-36 md:w-36"
+          className="mx-auto mb-5 h-10 w-10 rounded-sm object-cover opacity-85 ring-1 ring-[var(--line)]"
         />
         <p className="text-sm uppercase tracking-[0.35em] text-[var(--ember)]">
           Shared display · {connected ? "Live" : "Connecting…"}

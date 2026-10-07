@@ -21,19 +21,22 @@ export const metadata: Metadata = {
   description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
   applicationName: "AI Traitors",
   icons: {
-    icon: [{ url: "/logo.jpg", type: "image/jpeg" }],
-    apple: [{ url: "/logo.jpg", type: "image/jpeg" }],
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
   },
   openGraph: {
     title: "AI Traitors",
     description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
-    images: [{ url: "/logo.jpg", width: 1024, height: 1024, alt: "Traitors" }],
+    images: [{ url: "/opengraph-image.jpg", width: 1024, height: 1024, alt: "Traitors" }],
   },
   twitter: {
     card: "summary",
     title: "AI Traitors",
     description: "Multiplayer Traitors with AI castmates — Faithfuls vs Traitors.",
-    images: ["/logo.jpg"],
+    images: ["/opengraph-image.jpg"],
   },
   appleWebApp: {
     capable: true,
