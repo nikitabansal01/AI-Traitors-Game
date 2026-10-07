@@ -32,19 +32,18 @@ export default function HomePage() {
       />
 
       <div className="relative mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
-        <Image
-          src="/logo.jpg"
-          alt=""
-          width={40}
-          height={40}
-          priority
-          className="mb-5 h-8 w-8 rounded-sm object-cover opacity-80 ring-1 ring-[var(--line)]"
-        />
         <p className="text-xs uppercase tracking-[0.35em] text-[var(--ember)]">
           Multiplayer deception
         </p>
-        <h1 className="mt-4 font-[family-name:var(--font-display)] text-5xl leading-[0.95] text-[var(--ink)] sm:text-6xl md:text-8xl">
-          AI Traitors
+        <h1 className="mt-4">
+          <Image
+            src="/logo.jpg"
+            alt="AI Traitors"
+            width={420}
+            height={420}
+            priority
+            className="h-auto w-[min(72vw,280px)] rounded-sm object-cover ring-1 ring-[var(--line)]"
+          />
         </h1>
         <p className="mt-6 max-w-md text-lg text-[var(--muted)]">
           Join the cast. AI fills empty seats. Faithfuls hunt. Traitors murder.
