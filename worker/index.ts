@@ -41,6 +41,11 @@ const TIMING = {
   castleTableGapMs: 16_000,
   castlePerAiGapMs: 36_000,
   multiActorStaggerMs: 3_200,
+  /** Active phases need 1s ticks for timers; idle rooms should not write every second */
+  alarmActiveMs: 1_000,
+  alarmIdleMs: 15_000,
+  /** Coalesce Durable Object storage writes (free tier counts SQLite rows_written) */
+  persistMinMs: 5_000,
 };
 
 function roomCodeFromId(id: string): string {
@@ -59,17 +64,45 @@ export class TraitorsRoom extends Server<Env> {
   lastConclaveBeatAt = 0;
   lastActionBeatAt = 0;
   pendingCinematicAiAt: number | null = null;
+  /** True when in-memory state differs from last durable write */
+  dirty = false;
+  lastPersistAt = 0;
 
   async onStart() {
     const saved = await this.ctx.storage.get<GameState>("game");
     this.state = saved ?? createLobby(roomCodeFromId(this.name));
+    this.dirty = false;
     const existing = await this.ctx.storage.getAlarm();
     if (existing == null) {
-      await this.ctx.storage.setAlarm(Date.now() + 1000);
+      await this.scheduleAlarm();
     }
   }
 
-  async persist() {
+  needsFrequentAlarm(): boolean {
+    if (!this.state?.started) return false;
+    return !["lobby", "ended"].includes(this.state.phase);
+  }
+
+  alarmDelayMs(): number {
+    return this.needsFrequentAlarm() ? TIMING.alarmActiveMs : TIMING.alarmIdleMs;
+  }
+
+  async scheduleAlarm(delayMs = this.alarmDelayMs()) {
+    await this.ctx.storage.setAlarm(Date.now() + delayMs);
+  }
+
+  markDirty() {
+    this.dirty = true;
+  }
+
+  /** Persist only when dirty. Debounced unless force=true (e.g. before hibernate-sensitive moments). */
+  async persist(force = false) {
+    if (!this.state) return;
+    if (!this.dirty && !force) return;
+    const now = Date.now();
+    if (!force && now - this.lastPersistAt < TIMING.persistMinMs) return;
+    this.dirty = false;
+    this.lastPersistAt = now;
     await this.ctx.storage.put("game", this.state);
   }
 
@@ -84,8 +117,12 @@ export class TraitorsRoom extends Server<Env> {
     const playerId = (conn as Conn).state?.playerId;
     if (!playerId) return;
     const p = this.state.players.find((x) => x.id === playerId);
-    if (p && p.kind === "human") p.connected = false;
-    void this.broadcastViews();
+    if (p && p.kind === "human") {
+      p.connected = false;
+      this.markDirty();
+      void this.broadcastViews();
+      void this.persist();
+    }
   }
 
   async onMessage(sender: Connection, message: WSMessage) {
@@ -104,19 +141,25 @@ export class TraitorsRoom extends Server<Env> {
     const result = await this.handleAction(data, playerId ?? null, s);
     if (result && !result.ok) {
       sender.send(JSON.stringify({ type: "error", error: result.error }));
+      return;
     }
+    // Successful actions mutate in-memory state — durable write only if dirty
+    this.markDirty();
     await this.broadcastViews();
+    await this.persist(true);
   }
 
   async onAlarm() {
     if (!this.state) {
       const saved = await this.ctx.storage.get<GameState>("game");
       this.state = saved ?? createLobby(roomCodeFromId(this.name));
+      this.dirty = false;
     }
 
     const now = Date.now();
     const changed = tick(this.state);
     if (changed) {
+      this.markDirty();
       this.pendingCinematicAiAt = now + TIMING.afterCinematicMs;
       await this.broadcastViews();
     }
@@ -148,8 +191,9 @@ export class TraitorsRoom extends Server<Env> {
       else void this.runAiBeat("default");
     }
 
+    // Flush pending dirty state if debounce window elapsed — never write every tick
     await this.persist();
-    await this.ctx.storage.setAlarm(Date.now() + 1000);
+    await this.scheduleAlarm();
   }
 
   async handleAction(
@@ -238,35 +282,35 @@ export class TraitorsRoom extends Server<Env> {
     }
   }
 
-  applyAiDecision(playerId: string, decision: AiDecision) {
+  applyAiDecision(playerId: string, decision: AiDecision): boolean {
     switch (decision.type) {
       case "chat": {
         if (decision.channel === "castle") {
           const now = Date.now();
-          if (now - this.lastCastleAnyAt < TIMING.castleTableGapMs) return;
+          if (now - this.lastCastleAnyAt < TIMING.castleTableGapMs) return false;
           const last = this.lastAiChatAt.get(playerId) ?? 0;
-          if (now - last < TIMING.castlePerAiGapMs) return;
+          if (now - last < TIMING.castlePerAiGapMs) return false;
           this.lastAiChatAt.set(playerId, now);
           this.lastCastleAnyAt = now;
         }
         addChat(this.state, playerId, decision.channel, decision.text);
-        break;
+        return true;
       }
       case "vote":
         castVote(this.state, playerId, decision.targetId);
-        break;
+        return true;
       case "finale":
         setFinaleChoice(this.state, playerId, decision.choice);
-        break;
+        return true;
       case "night":
         setNightMode(this.state, playerId, decision.mode);
         setNightTarget(this.state, playerId, decision.targetId);
-        break;
+        return true;
       case "angel_shield":
         setAngelShield(this.state, playerId, decision.targetId);
-        break;
+        return true;
       default:
-        break;
+        return false;
     }
   }
 
@@ -307,8 +351,11 @@ export class TraitorsRoom extends Server<Env> {
 
       for (const actor of actors) {
         const decision = await decideForAi(this.state, actor, key, { preferConclave });
-        this.applyAiDecision(actor.id, decision);
-        await this.broadcastViews();
+        const applied = this.applyAiDecision(actor.id, decision);
+        if (applied) {
+          this.markDirty();
+          await this.broadcastViews();
+        }
         if (actors.length > 1) {
           await new Promise((r) => setTimeout(r, TIMING.multiActorStaggerMs));
         }
@@ -325,8 +372,8 @@ export class TraitorsRoom extends Server<Env> {
     conn.send(JSON.stringify({ type: "state", view }));
   }
 
+  /** Fan-out websocket views only — does not touch Durable Object storage. */
   async broadcastViews() {
-    await this.persist();
     for (const conn of this.getConnections<ConnState>()) {
       this.sendView(conn);
     }
